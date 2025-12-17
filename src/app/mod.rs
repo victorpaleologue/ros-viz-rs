@@ -46,8 +46,13 @@ pub fn run(config: AppConfig) -> anyhow::Result<()> {
         "Starting ros-viz-rs application"
     );
 
-    // TODO: Replace stub with Bevy app runner when rendering is added.
-    let _app = build_app(&config);
+    // For now, build the app and advance a tick so startup systems (including capture) run.
+    // Once rendering is wired, this will switch to a real app loop.
+    let mut app = build_app(&config);
+    app.update();
+
+    // If an output path was requested, a stub image will have been written during startup.
+    // Keep early exit behavior to remain friendly for headless CI.
     Ok(())
 }
 
@@ -174,11 +179,7 @@ fn publish_robot_description(assets: Res<RobotAssets>, ros: Option<Res<RosState>
     }
 }
 
-fn capture_output_image(
-    config: Res<AppConfig>,
-    assets: Res<RobotAssets>,
-    emulator: Res<Emulator>,
-) {
+fn capture_output_image(config: Res<AppConfig>, assets: Res<RobotAssets>, emulator: Res<Emulator>) {
     if let Some(path) = &config.output_image {
         let img = render_stub_image(&assets, &emulator, &config.render);
         if let Err(err) = img.save(path) {
@@ -263,6 +264,8 @@ fn init_tracing() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use tempfile::tempdir;
 
     #[test]
     fn builds_headless_app() {
@@ -360,5 +363,18 @@ mod tests {
             }
         }
         assert!(found);
+    }
+
+    #[test]
+    fn run_writes_output_image_when_requested() {
+        let dir = tempdir().expect("tempdir");
+        let img_path = dir.path().join("out.png");
+
+        let mut cfg = AppConfig::new(0);
+        cfg.output_image = Some(img_path.clone());
+        run(cfg).expect("run succeeds");
+
+        let meta = fs::metadata(&img_path).expect("image exists");
+        assert!(meta.len() > 0, "image should not be empty");
     }
 }

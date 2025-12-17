@@ -24,3 +24,6 @@ k = { version = "0.27", optional = true }
 nalgebra = { version = "0.33", optional = true, features = ["serde"] }
 mesh-loader = { version = "0.1", optional = true }
 image = { version = "0.24", default-features = false, features = ["png"] }
+
+[dev-dependencies]
+tempfile = "3"
