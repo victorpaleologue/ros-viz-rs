@@ -7,6 +7,8 @@ pub fn run(config: AppConfig) -> anyhow::Result<()> {
     init_tracing();
     tracing::info!(
         domain_id = config.domain_id,
+        headless = config.headless,
+        output_image = ?config.output_image,
         "Starting ros-viz-rs application"
     );
 

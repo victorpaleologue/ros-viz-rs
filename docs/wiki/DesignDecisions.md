@@ -1,6 +1,7 @@
 # Design Decisions
 
 - Bevy is the core engine for 3D rendering; egui will be layered via bevy_egui only when native widgets are needed.
+- Headless/offscreen rendering is supported via CLI flags and a render-graph copy step to write PNGs for tests; windowed mode keeps DefaultPlugins while headless swaps to a minimal render stack.
 - Command-line parsing uses clap (no structopt) with explicit ROS domain selection via `--domain` overriding `ROS_DOMAIN_ID`.
 - ROS2 networking will be isolated behind a `ros` Cargo feature to keep CI green without a ROS runtime; emulator-based tests will run without that feature.
 - When the `ros` feature is absent, ROS connectivity surfaces a clear error to keep CI runnable; real transport will live behind the feature-gated path.

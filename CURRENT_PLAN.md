@@ -14,7 +14,13 @@ Bootstrap the project with clear docs, CI, and a minimal runnable crate scaffold
 - [x] Add first test around config parsing to validate the CLI surface.
 - [x] Sketch ROS2 connection module layout and begin stub subscriber/publisher interfaces (feature `ros`).
 - [x] Outline emulator scaffolding and fixtures (dummy URDF + joint stream) under tests/ and assets/.
-- [ ] Plan Bevy scene bootstrap and offscreen image capture pathway.
+- [x] Plan Bevy scene bootstrap and offscreen image capture pathway.
+
+Next up:
+
+- [ ] Add rendering config (headless/windowed, resolution) to CLI/config and Bevy builder skeleton.
+- [ ] Stub Bevy app builder with headless toggle and placeholder systems; keep tests headless-capable.
+- [ ] Draft URDF ingest/mesh loading API surface and fixture layout (assets/ + tests/ helpers).
 
 ## Upcoming milestones
 
