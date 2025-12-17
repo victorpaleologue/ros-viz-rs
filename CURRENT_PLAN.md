@@ -12,8 +12,8 @@ Bootstrap the project with clear docs, CI, and a minimal runnable crate scaffold
 - [x] Set up crate structure with CLI domain selection (CLI flag + ROS_DOMAIN_ID fallback) and placeholder Bevy/ROS2 wiring behind features.
 - [x] Add CI workflow (fmt, clippy, test) and ensure `cargo test` passes locally.
 - [x] Add first test around config parsing to validate the CLI surface.
-- [ ] Sketch ROS2 connection module layout and begin stub subscriber/publisher interfaces (feature `ros`).
-- [ ] Outline emulator scaffolding and fixtures (dummy URDF + joint stream) under tests/ and assets/.
+- [x] Sketch ROS2 connection module layout and begin stub subscriber/publisher interfaces (feature `ros`).
+- [x] Outline emulator scaffolding and fixtures (dummy URDF + joint stream) under tests/ and assets/.
 - [ ] Plan Bevy scene bootstrap and offscreen image capture pathway.
 
 ## Upcoming milestones
