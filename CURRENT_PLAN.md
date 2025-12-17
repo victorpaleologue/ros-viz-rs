@@ -36,7 +36,11 @@ Next up:
 Next up:
 
 - [x] Add ROS loopback test coverage under `ros` feature (joint_commands publish/receive, joint_states roundtrip).
-- [ ] Wire rendering pipeline and image capture harness.
+- [x] Wire rendering pipeline and image capture harness (placeholder stub writes deterministic PNG).
+
+Next up:
+
+- [ ] Replace stub capture with Bevy-rendered output (enable render plugins behind feature, headless/wgpu offscreen, deterministic test harness).
 
 ## Upcoming milestones
 
