@@ -34,6 +34,7 @@ pub struct JointStateSnapshot {
 struct EmulatorState {
     urdf_xml: String,
     joints: BTreeMap<String, f64>,
+    time: f64,
 }
 
 #[derive(Debug, Clone, Resource)]
@@ -46,6 +47,7 @@ impl Emulator {
         let state = EmulatorState {
             urdf_xml: config.urdf_xml,
             joints: initial_joints,
+            time: 0.0,
         };
         Self {
             state: Arc::new(Mutex::new(state)),
@@ -76,6 +78,21 @@ impl Emulator {
             .map(|n| guard.joints.get(n).copied().unwrap_or(0.0))
             .collect();
         JointStateSnapshot { names, positions }
+    }
+
+    /// Updates internal time and animates joints with sine waves at different frequencies
+    pub fn tick(&self, delta_time: f64) {
+        let mut guard = self.state.lock().expect("state poisoned");
+        guard.time += delta_time;
+
+        // Animate each joint with sine wave at different frequencies
+        let joint_names: Vec<String> = guard.joints.keys().cloned().collect();
+        for (idx, name) in joint_names.iter().enumerate() {
+            let freq = 0.5 + (idx as f64 * 0.3);
+            let amplitude = 1.0;
+            let value = amplitude * (guard.time * freq).sin();
+            guard.joints.insert(name.clone(), value);
+        }
     }
 }
 

@@ -4,10 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-default = []
+default = ["render", "ros", "urdf"]
 ros = ["ros2-client"]
 ui = ["bevy_egui"]
 urdf = ["urdf-rs", "k", "nalgebra", "mesh-loader"]
+render = []
 
 [dependencies]
 anyhow = "1"

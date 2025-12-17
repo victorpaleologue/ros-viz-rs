@@ -2,9 +2,8 @@ use crate::config::AppConfig;
 
 #[cfg(feature = "ros")]
 use ros2_client::{
-    context::DEFAULT_PUBLISHER_QOS,
-    context::DEFAULT_SUBSCRIPTION_QOS,
-    Context, ContextOptions, Message, MessageTypeName, Subscription,
+    Context, Message, MessageTypeName, Name, Node, NodeName, NodeOptions, Subscription,
+    DEFAULT_PUBLISHER_QOS, DEFAULT_SUBSCRIPTION_QOS,
 };
 #[cfg(feature = "ros")]
 use serde::{Deserialize, Serialize};
@@ -47,43 +46,56 @@ pub struct JointStateMsg {
 impl Message for JointStateMsg {}
 
 #[cfg(feature = "ros")]
-#[derive(Debug)]
 pub struct RosHandle {
-    ctx: Context,
+    _node: Node,
     robot_description_pub: ros2_client::Publisher<String>,
     joint_state_pub: ros2_client::Publisher<JointStateMsg>,
     joint_command_sub: Subscription<JointStateMsg>,
 }
 
+#[cfg(feature = "ros")]
+impl std::fmt::Debug for RosHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RosHandle").finish()
+    }
+}
+
 /// Establish ROS2 connectivity. When the `ros` feature is disabled, this returns an error so CI can run without ROS2.
 #[cfg(feature = "ros")]
 pub fn connect(config: &RosConfig) -> anyhow::Result<RosHandle> {
-    let ctx = Context::with_options(ContextOptions::new().domain_id(config.domain_id as u16))?;
+    let ctx = Context::new()?;
 
-    let robot_description_topic = ctx.create_topic(
-        TOPIC_ROBOT_DESCRIPTION.to_string(),
+    let node_name = NodeName::new(
+        config.namespace.as_ref().map(|s| s.as_str()).unwrap_or("/"),
+        &config.node_name,
+    )?;
+    let mut node = ctx.new_node(node_name, NodeOptions::new())?;
+
+    let robot_description_topic = node.create_topic(
+        &Name::new("/", "robot_description")?,
         MessageTypeName::new("std_msgs", "String"),
         &DEFAULT_PUBLISHER_QOS,
     )?;
 
-    let joint_states_topic = ctx.create_topic(
-        TOPIC_JOINT_STATES.to_string(),
+    let joint_states_topic = node.create_topic(
+        &Name::new("/", "joint_states")?,
         MessageTypeName::new("sensor_msgs", "JointState"),
         &DEFAULT_PUBLISHER_QOS,
     )?;
 
-    let joint_commands_topic = ctx.create_topic(
-        TOPIC_JOINT_COMMANDS.to_string(),
+    let joint_commands_topic = node.create_topic(
+        &Name::new("/", "joint_commands")?,
         MessageTypeName::new("sensor_msgs", "JointState"),
         &DEFAULT_SUBSCRIPTION_QOS,
     )?;
 
-    let robot_description_pub = ctx.create_publisher::<String>(&robot_description_topic, None)?;
-    let joint_state_pub = ctx.create_publisher::<JointStateMsg>(&joint_states_topic, None)?;
-    let joint_command_sub = ctx.create_subscription::<JointStateMsg>(&joint_commands_topic, None)?;
+    let robot_description_pub = node.create_publisher::<String>(&robot_description_topic, None)?;
+    let joint_state_pub = node.create_publisher::<JointStateMsg>(&joint_states_topic, None)?;
+    let joint_command_sub =
+        node.create_subscription::<JointStateMsg>(&joint_commands_topic, None)?;
 
     Ok(RosHandle {
-        ctx,
+        _node: node,
         robot_description_pub,
         joint_state_pub,
         joint_command_sub,
@@ -129,13 +141,15 @@ impl RosHandle {
     pub(crate) fn joint_command_publisher(
         &self,
     ) -> anyhow::Result<ros2_client::Publisher<JointStateMsg>> {
-        let topic = self.ctx.create_topic(
-            TOPIC_JOINT_COMMANDS.to_string(),
+        let ctx = Context::new()?;
+        let node_name = NodeName::new("/", "ros_viz_test_publisher")?;
+        let mut node = ctx.new_node(node_name, NodeOptions::new())?;
+        let topic = node.create_topic(
+            &Name::new("/", "joint_commands")?,
             MessageTypeName::new("sensor_msgs", "JointState"),
             &DEFAULT_PUBLISHER_QOS,
         )?;
-        self.ctx
-            .create_publisher::<JointStateMsg>(&topic, None)
+        node.create_publisher::<JointStateMsg>(&topic, None)
             .map_err(|e| anyhow::anyhow!("create joint_commands publisher failed: {e:?}"))
     }
 }

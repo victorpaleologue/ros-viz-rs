@@ -5,8 +5,11 @@ use crate::ros::{self, JointStateMsg, RosConfig};
 use crate::urdf::{parse_urdf, UrdfScene};
 use bevy::app::App;
 use bevy::prelude::*;
-use bevy::transform::TransformPlugin;
 use bevy::MinimalPlugins;
+#[cfg(feature = "render")]
+use bevy::window::{PresentMode, WindowResolution};
+#[cfg(feature = "render")]
+use bevy::DefaultPlugins;
 use image::{Rgba, RgbaImage};
 use std::collections::{BTreeMap, HashMap};
 use tracing_subscriber::EnvFilter;
@@ -46,13 +49,16 @@ pub fn run(config: AppConfig) -> anyhow::Result<()> {
         "Starting ros-viz-rs application"
     );
 
-    // For now, build the app and advance a tick so startup systems (including capture) run.
-    // Once rendering is wired, this will switch to a real app loop.
     let mut app = build_app(&config);
-    app.update();
 
-    // If an output path was requested, a stub image will have been written during startup.
-    // Keep early exit behavior to remain friendly for headless CI.
+    // For headless with output_image, run a single tick and exit (CI-friendly).
+    // Otherwise, run the full Bevy loop for live visualization.
+    if config.headless && config.output_image.is_some() {
+        app.update();
+        return Ok(());
+    }
+
+    app.run();
     Ok(())
 }
 
@@ -82,13 +88,47 @@ pub fn build_app(config: &AppConfig) -> App {
     if config.headless {
         app.add_plugins(MinimalPlugins);
     } else {
-        // Placeholder: use MinimalPlugins until windowed rendering is wired; DefaultPlugins will come later.
-        app.add_plugins(MinimalPlugins);
+        #[cfg(feature = "render")]
+        {
+            let window_plugin = bevy::window::WindowPlugin {
+                primary_window: Some(bevy::window::Window {
+                    resolution: WindowResolution::new(
+                        config.render.width as f32,
+                        config.render.height as f32,
+                    ),
+                    present_mode: PresentMode::AutoNoVsync,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+
+            app.add_plugins(
+                DefaultPlugins
+                    .set(window_plugin)
+                    .set(bevy::log::LogPlugin {
+                        level: bevy::log::Level::WARN,
+                        filter: "wgpu_core=warn,wgpu_hal=warn".into(),
+                        custom_layer: |_| None,
+                    }),
+            );
+            app.add_systems(Startup, spawn_render_basics);
+        }
+
+        #[cfg(not(feature = "render"))]
+        {
+            app.add_plugins(MinimalPlugins);
+        }
     }
 
-    app.add_plugins(TransformPlugin);
-    app.add_systems(Startup, populate_urdf_scene);
-    app.add_systems(Update, sync_joint_transforms);
+    // Note: TransformPlugin is included in both DefaultPlugins and MinimalPlugins in Bevy 0.15
+
+    // populate_urdf_scene needs Assets which are only available with DefaultPlugins (render mode)
+    #[cfg(feature = "render")]
+    if !config.headless {
+        app.add_systems(Startup, populate_urdf_scene);
+    }
+
+    app.add_systems(Update, (tick_emulator, sync_joint_transforms).chain());
     app.add_systems(Startup, capture_output_image);
 
     #[cfg(feature = "ros")]
@@ -132,22 +172,62 @@ fn zeroed_joints(scene: &UrdfScene) -> BTreeMap<String, f64> {
         .collect()
 }
 
-fn populate_urdf_scene(mut commands: Commands, assets: Res<RobotAssets>) {
-    for link in &assets.scene.links {
-        commands.spawn((LinkNode, Name::new(format!("link:{link}"))));
+#[cfg(feature = "render")]
+fn populate_urdf_scene(
+    mut commands: Commands,
+    assets: Res<RobotAssets>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    // Create link meshes - boxes to represent rigid bodies
+    let link_mesh = meshes.add(Cuboid::new(1.2, 0.15, 0.15));
+    let link_material = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.2, 0.6, 0.8),
+        metallic: 0.3,
+        perceptual_roughness: 0.5,
+        ..Default::default()
+    });
+
+    // Spread links vertically with more spacing
+    for (idx, link) in assets.scene.links.iter().enumerate() {
+        let y_offset = idx as f32 * 1.0;  // Vertical spacing
+        commands.spawn((
+            LinkNode,
+            Mesh3d(link_mesh.clone()),
+            MeshMaterial3d(link_material.clone()),
+            Transform::from_xyz(0.0, y_offset, 0.0),
+            Name::new(format!("link:{link}")),
+        ));
     }
 
-    for joint in &assets.scene.joints {
+    // Create joint meshes - cylinders oriented along Y axis (rotation axis)
+    let joint_mesh = meshes.add(Cylinder::new(0.08, 0.3));  // radius, height
+    let joint_material = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.9, 0.3, 0.2),
+        metallic: 0.5,
+        perceptual_roughness: 0.3,
+        ..Default::default()
+    });
+
+    // Position joints between links, cylinders represent rotation axes
+    for (idx, joint) in assets.scene.joints.iter().enumerate() {
+        let y_offset = idx as f32 * 1.0 + 0.5;  // Between links
         commands.spawn((
             JointNode {
                 name: joint.clone(),
                 position: 0.0,
             },
-            Transform::default(),
-            GlobalTransform::default(),
+            Mesh3d(joint_mesh.clone()),
+            MeshMaterial3d(joint_material.clone()),
+            // Cylinder is aligned with Y by default, which represents our rotation axis
+            Transform::from_xyz(0.0, y_offset, 0.0),
             Name::new(format!("joint:{joint}")),
         ));
     }
+}
+
+fn tick_emulator(time: Res<bevy::time::Time>, emulator: Res<Emulator>) {
+    emulator.tick(time.delta_secs_f64());
 }
 
 fn sync_joint_transforms(
@@ -165,9 +245,43 @@ fn sync_joint_transforms(
     for (mut node, mut transform) in query.iter_mut() {
         if let Some(value) = values.get(node.name.as_str()) {
             node.position = *value;
-            transform.translation.x = *value as f32;
+            // Animate joint: translate on X and rotate on Y for visible motion
+            transform.translation.x = (*value as f32) * 0.5;  // Scale down translation
+            transform.rotation = Quat::from_rotation_y(*value as f32);
+            // Add some Z-axis rotation for more dynamic movement
+            transform.rotate_local_z(*value as f32 * 0.3);
         }
     }
+}
+
+#[cfg(feature = "render")]
+fn spawn_render_basics(mut commands: Commands) {
+    // Camera positioned to view the robot from an angle
+    commands.spawn((
+        Camera3d::default(),
+        Transform::from_xyz(3.0, 2.5, 4.0).looking_at(Vec3::new(0.0, 1.0, 0.0), Vec3::Y),
+    ));
+
+    // Main directional light from above-right
+    commands.spawn((
+        DirectionalLight {
+            shadows_enabled: true,
+            illuminance: 10000.0,
+            ..Default::default()
+        },
+        Transform::from_rotation(Quat::from_euler(
+            EulerRot::ZYX,
+            0.0,
+            -0.7,
+            -0.6,
+        )),
+    ));
+
+    // Add ambient light for better visibility
+    commands.insert_resource(bevy::pbr::AmbientLight {
+        color: Color::WHITE,
+        brightness: 300.0,
+    });
 }
 
 #[cfg(feature = "ros")]
@@ -353,7 +467,7 @@ mod tests {
 
         app.update(); // run sync system
 
-        let mut world = app.world_mut();
+        let world = app.world_mut();
         let mut query = world.query::<(&JointNode, &Transform)>();
         let mut found = false;
         for (node, transform) in query.iter(&world) {

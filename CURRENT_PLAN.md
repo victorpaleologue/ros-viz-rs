@@ -4,50 +4,36 @@ Purpose: keep a living checklist for pausing/resuming work.
 
 ## Current objective
 
-Bootstrap the project with clear docs, CI, and a minimal runnable crate scaffolding that already parses ROS domain CLI args and is ready for ROS2 + Bevy integration.
+Enhance URDF parsing to build proper kinematic tree and improve ROS integration for live robot visualization.
 
-## Near-term steps
+## Completed (Milestone 3)
 
-- [x] Add project scaffolding docs (AGENT, README, wiki-style files) and initial design decisions.
-- [x] Set up crate structure with CLI domain selection (CLI flag + ROS_DOMAIN_ID fallback) and placeholder Bevy/ROS2 wiring behind features.
-- [x] Add CI workflow (fmt, clippy, test) and ensure `cargo test` passes locally.
-- [x] Add first test around config parsing to validate the CLI surface.
-- [x] Sketch ROS2 connection module layout and begin stub subscriber/publisher interfaces (feature `ros`).
-- [x] Outline emulator scaffolding and fixtures (dummy URDF + joint stream) under tests/ and assets/.
-- [x] Plan Bevy scene bootstrap and offscreen image capture pathway.
+- [x] Enable render, ros, and urdf features by default for easy `cargo run`
+- [x] Switch from app.update() to app.run() so GUI stays open with continuous updates
+- [x] Add 3D geometry (boxes for links, cylinders for joints) to scene entities
+- [x] Implement automatic animation with sine-wave joint motion
+- [x] Test GUI with animated 3D scene and ROS connection (domain 0)
 
-Next up:
+## Next up (URDF & ROS focus)
 
-- [x] Add rendering config (headless/windowed, resolution) to CLI/config and Bevy builder skeleton.
-- [x] Stub Bevy app builder with headless toggle and placeholder systems; keep tests headless-capable.
-- [x] Draft URDF ingest/mesh loading API surface and fixture layout (assets/ + tests/ helpers).
-- [x] Plan emulator implementation details (topics/messages, joint update handling, timing) and test harness hooks.
-
-Next up:
-
-- [x] Implement URDF parsing pipeline behind feature flag and add first fixture assets.
-- [x] Implement emulator message flow (publish robot_description/joint_states, accept joint commands) with a basic in-process test harness.
-
-Next up:
-
-- [x] Wire emulator and URDF scene into Bevy app (load URDF, spawn scene placeholders).
-- [x] Add ROS feature hooks to emulator (actual topic publish/subscribe via ros2-client) while keeping CI stubs intact.
-
-Next up:
-
-- [x] Add ROS loopback test coverage under `ros` feature (joint_commands publish/receive, joint_states roundtrip).
-- [x] Wire rendering pipeline and image capture harness (placeholder stub writes deterministic PNG).
-
-Next up:
-
-- [ ] Replace stub capture with Bevy-rendered output (enable render plugins behind feature, headless/wgpu offscreen, deterministic test harness).
+- [ ] Enhance URDF parsing to extract joint axes, origins, parent/child relationships
+- [ ] Build proper kinematic tree from URDF with parent-child transforms
+- [ ] Use URDF joint axis data to orient joint cylinders correctly
+- [ ] Position links relative to their parent joints using URDF origin data
+- [ ] Verify ROS integration is publishing robot_description and joint_states correctly
+- [ ] Test subscribing to external joint_commands from ROS topic
+- [ ] Add CLI option to load custom URDF file path instead of using default
+- [ ] Test with actual robot URDF (e.g., a simple arm or the robot from your ROS system)
 
 ## Upcoming milestones
 
-- Milestone 0: Scaffolding + CLI + CI green (initial commit target).
-- Milestone 1: ROS2 connection layer with domain selection and subscription stubs plus emulator harness.
-- Milestone 2: URDF ingestion and Bevy scene construction with sample assets.
-- Milestone 3: Live joint state updates and image capture tool + automated comparison test.
+- Milestone 0: ✓ Scaffolding + CLI + CI green
+- Milestone 1: ✓ ROS2 connection layer with emulator
+- Milestone 2: ✓ URDF ingestion and scene construction
+- Milestone 3: ✓ Live 3D visualization with animated geometry and ROS connection
+- Milestone 4 (current): Proper URDF kinematic tree with accurate joint/link transforms
+- Milestone 5: External ROS device integration and bidirectional communication
+- Milestone 6: Offscreen deterministic rendering and automated visual comparison tests
 
 ## Notes
 
