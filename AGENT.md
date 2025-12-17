@@ -20,6 +20,7 @@ Behavior guardrails:
 - Keep commits scoped to milestones; avoid mixing unrelated changes.
 - Favor tests that can run with `cargo test`; avoid flaky or environment-heavy steps when possible.
 - Keep ASCII unless non-ASCII is justified by existing file content.
+- Unless you stumble on a problem, go on with the plan automatically. Do not stop at every step.
 
 Pitfalls to watch for:
 
