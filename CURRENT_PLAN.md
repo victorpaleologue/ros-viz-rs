@@ -20,8 +20,13 @@ Next up:
 
 - [x] Add rendering config (headless/windowed, resolution) to CLI/config and Bevy builder skeleton.
 - [x] Stub Bevy app builder with headless toggle and placeholder systems; keep tests headless-capable.
-- [ ] Draft URDF ingest/mesh loading API surface and fixture layout (assets/ + tests/ helpers).
-- [ ] Plan emulator implementation details (topics/messages, joint update handling, timing) and test harness hooks.
+- [x] Draft URDF ingest/mesh loading API surface and fixture layout (assets/ + tests/ helpers).
+- [x] Plan emulator implementation details (topics/messages, joint update handling, timing) and test harness hooks.
+
+Next up:
+
+- [ ] Implement URDF parsing pipeline behind feature flag and add first fixture assets.
+- [ ] Implement emulator message flow (publish robot_description/joint_states, accept joint commands) with a basic in-process test harness.
 
 ## Upcoming milestones
 
