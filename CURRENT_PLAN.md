@@ -30,8 +30,13 @@ Next up:
 
 Next up:
 
-- [ ] Wire emulator and URDF scene into Bevy app (load URDF, spawn scene placeholders).
-- [ ] Add ROS feature hooks to emulator (actual topic publish/subscribe via ros2-client) while keeping CI stubs intact.
+- [x] Wire emulator and URDF scene into Bevy app (load URDF, spawn scene placeholders).
+- [x] Add ROS feature hooks to emulator (actual topic publish/subscribe via ros2-client) while keeping CI stubs intact.
+
+Next up:
+
+- [ ] Add ROS loopback test coverage under `ros` feature (joint_commands publish/receive, joint_states roundtrip).
+- [ ] Wire rendering pipeline and image capture harness.
 
 ## Upcoming milestones
 
