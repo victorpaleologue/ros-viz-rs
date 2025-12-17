@@ -1,7 +1,38 @@
 use crate::config::AppConfig;
-use bevy::MinimalPlugins;
+use crate::emulator::{Emulator, EmulatorConfig};
+#[cfg(feature = "ros")]
+use crate::ros::{self, JointStateMsg, RosConfig};
+use crate::urdf::{parse_urdf, UrdfScene};
 use bevy::app::App;
+use bevy::prelude::*;
+use bevy::transform::TransformPlugin;
+use bevy::MinimalPlugins;
+use std::collections::{BTreeMap, HashMap};
 use tracing_subscriber::EnvFilter;
+
+// Temporary built-in URDF to keep the pipeline exercised without external assets.
+const DEFAULT_URDF_XML: &str = include_str!("../../assets/tests/urdf/box_bot.urdf");
+
+#[cfg(feature = "ros")]
+#[derive(Debug, Resource)]
+struct RosState {
+    handle: ros::RosHandle,
+}
+
+#[derive(Debug, Clone, Resource)]
+pub struct RobotAssets {
+    pub urdf_xml: String,
+    pub scene: UrdfScene,
+}
+
+#[derive(Debug, Component)]
+struct LinkNode;
+
+#[derive(Debug, Component)]
+struct JointNode {
+    name: String,
+    position: f64,
+}
 
 /// Initialize tracing and launch the (future) Bevy-based app.
 /// Tracing setup mirrors https://docs.rs/tracing-subscriber/latest/tracing_subscriber/fmt/index.html
@@ -14,7 +45,8 @@ pub fn run(config: AppConfig) -> anyhow::Result<()> {
         "Starting ros-viz-rs application"
     );
 
-    // TODO: Bevy app bootstrap and ROS2 graph wiring will be added here.
+    // TODO: Replace stub with Bevy app runner when rendering is added.
+    let _app = build_app(&config);
     Ok(())
 }
 
@@ -24,6 +56,23 @@ pub fn build_app(config: &AppConfig) -> App {
     let mut app = App::new();
     app.insert_resource(config.clone());
 
+    let (urdf_xml, scene) = prepare_urdf_assets();
+    let initial_joints = zeroed_joints(&scene);
+    let emulator = Emulator::start(
+        EmulatorConfig::from_app(config, "ros_viz_robot", urdf_xml.clone()),
+        initial_joints,
+    );
+
+    app.insert_resource(RobotAssets { urdf_xml, scene });
+    app.insert_resource(emulator);
+
+    #[cfg(feature = "ros")]
+    {
+        if let Some(ros) = maybe_init_ros(config) {
+            app.insert_resource(RosState { handle: ros });
+        }
+    }
+
     if config.headless {
         app.add_plugins(MinimalPlugins);
     } else {
@@ -31,7 +80,128 @@ pub fn build_app(config: &AppConfig) -> App {
         app.add_plugins(MinimalPlugins);
     }
 
+    app.add_plugins(TransformPlugin);
+    app.add_systems(Startup, populate_urdf_scene);
+    app.add_systems(Update, sync_joint_transforms);
+
+    #[cfg(feature = "ros")]
+    {
+        app.add_systems(Startup, publish_robot_description);
+        app.add_systems(Update, (publish_joint_states, apply_joint_commands));
+    }
+
     app
+}
+
+#[cfg(feature = "ros")]
+fn maybe_init_ros(config: &AppConfig) -> Option<ros::RosHandle> {
+    let cfg = RosConfig::from_app(config);
+    match ros::connect(&cfg) {
+        Ok(handle) => Some(handle),
+        Err(err) => {
+            tracing::warn!(?err, "ROS connect failed; continuing without ROS");
+            None
+        }
+    }
+}
+
+fn prepare_urdf_assets() -> (String, UrdfScene) {
+    let xml = DEFAULT_URDF_XML.trim().to_string();
+    let scene = match parse_urdf(&xml) {
+        Ok(scene) => scene,
+        Err(err) => {
+            tracing::warn!(?err, "URDF parsing disabled or failed; using empty scene");
+            UrdfScene::empty()
+        }
+    };
+    (xml, scene)
+}
+
+fn zeroed_joints(scene: &UrdfScene) -> BTreeMap<String, f64> {
+    scene
+        .joints
+        .iter()
+        .map(|name| (name.clone(), 0.0))
+        .collect()
+}
+
+fn populate_urdf_scene(mut commands: Commands, assets: Res<RobotAssets>) {
+    for link in &assets.scene.links {
+        commands.spawn((LinkNode, Name::new(format!("link:{link}"))));
+    }
+
+    for joint in &assets.scene.joints {
+        commands.spawn((
+            JointNode {
+                name: joint.clone(),
+                position: 0.0,
+            },
+            Transform::default(),
+            GlobalTransform::default(),
+            Name::new(format!("joint:{joint}")),
+        ));
+    }
+}
+
+fn sync_joint_transforms(
+    emulator: Res<Emulator>,
+    mut query: Query<(&mut JointNode, &mut Transform)>,
+) {
+    let snapshot = emulator.joint_state_snapshot();
+    let values: HashMap<&str, f64> = snapshot
+        .names
+        .iter()
+        .zip(snapshot.positions.iter())
+        .map(|(name, pos)| (name.as_str(), *pos))
+        .collect();
+
+    for (mut node, mut transform) in query.iter_mut() {
+        if let Some(value) = values.get(node.name.as_str()) {
+            node.position = *value;
+            transform.translation.x = *value as f32;
+        }
+    }
+}
+
+#[cfg(feature = "ros")]
+fn publish_robot_description(assets: Res<RobotAssets>, ros: Option<Res<RosState>>) {
+    if let Some(ros) = ros.as_ref() {
+        if let Err(err) = ros.handle.publish_robot_description(&assets.urdf_xml) {
+            tracing::warn!(?err, "Failed to publish robot_description");
+        }
+    }
+}
+
+#[cfg(feature = "ros")]
+fn publish_joint_states(emulator: Res<Emulator>, ros: Option<Res<RosState>>) {
+    if let Some(ros) = ros.as_ref() {
+        let snapshot = emulator.joint_state_snapshot();
+        let msg = JointStateMsg {
+            names: snapshot.names,
+            positions: snapshot.positions,
+        };
+        if let Err(err) = ros.handle.publish_joint_states(msg) {
+            tracing::warn!(?err, "Failed to publish joint_states");
+        }
+    }
+}
+
+#[cfg(feature = "ros")]
+fn apply_joint_commands(emulator: Res<Emulator>, ros: Option<Res<RosState>>) {
+    if let Some(ros) = ros.as_ref() {
+        match ros.handle.try_take_joint_commands() {
+            Ok(Some(cmds)) => {
+                let updates = cmds
+                    .names
+                    .into_iter()
+                    .zip(cmds.positions.into_iter())
+                    .collect::<Vec<_>>();
+                emulator.apply_joint_commands(updates);
+            }
+            Ok(None) => {}
+            Err(err) => tracing::warn!(?err, "Failed to read joint_commands"),
+        }
+    }
 }
 
 fn init_tracing() {
@@ -53,6 +223,8 @@ mod tests {
         let app = build_app(&cfg);
         let stored = app.world().get_resource::<AppConfig>().cloned();
         assert_eq!(stored, Some(cfg));
+        assert!(app.world().contains_resource::<RobotAssets>());
+        assert!(app.world().contains_resource::<Emulator>());
     }
 
     #[test]
@@ -61,5 +233,60 @@ mod tests {
         let app = build_app(&cfg);
         let stored = app.world().get_resource::<AppConfig>().cloned();
         assert_eq!(stored, Some(cfg));
+        assert!(app.world().contains_resource::<RobotAssets>());
+        assert!(app.world().contains_resource::<Emulator>());
+    }
+
+    #[test]
+    fn startup_spawns_scene_entities() {
+        let cfg = AppConfig::new(0);
+        let mut app = build_app(&cfg);
+        app.update();
+
+        let assets = app
+            .world()
+            .get_resource::<RobotAssets>()
+            .cloned()
+            .expect("assets present");
+
+        let world = app.world_mut();
+        let link_count = world.query::<&LinkNode>().iter(&*world).count();
+        let joint_count = world
+            .query::<(&JointNode, &Transform)>()
+            .iter(&*world)
+            .count();
+
+        assert_eq!(link_count, assets.scene.link_count());
+        assert_eq!(joint_count, assets.scene.joint_count());
+    }
+
+    #[cfg(feature = "urdf")]
+    #[test]
+    fn joint_commands_update_transforms() {
+        let cfg = AppConfig::new(0);
+        let mut app = build_app(&cfg);
+        app.update(); // run startup systems
+
+        {
+            let emulator = app
+                .world()
+                .get_resource::<Emulator>()
+                .cloned()
+                .expect("emulator present");
+            emulator.apply_joint_commands(vec![("shoulder".to_string(), 1.25)]);
+        }
+
+        app.update(); // run sync system
+
+        let mut world = app.world_mut();
+        let mut query = world.query::<(&JointNode, &Transform)>();
+        let mut found = false;
+        for (node, transform) in query.iter(&world) {
+            if node.name == "shoulder" {
+                found = true;
+                assert!((transform.translation.x - 1.25).abs() < 1e-6);
+            }
+        }
+        assert!(found);
     }
 }

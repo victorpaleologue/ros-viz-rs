@@ -1,36 +1,117 @@
 use crate::config::AppConfig;
+use bevy::prelude::Resource;
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone)]
 pub struct EmulatorConfig {
     pub domain_id: u32,
     pub robot_name: String,
+    pub urdf_xml: String,
 }
 
 impl EmulatorConfig {
-    pub fn from_app(app: &AppConfig, robot_name: impl Into<String>) -> Self {
+    pub fn from_app(
+        app: &AppConfig,
+        robot_name: impl Into<String>,
+        urdf_xml: impl Into<String>,
+    ) -> Self {
         Self {
             domain_id: app.domain_id,
             robot_name: robot_name.into(),
+            urdf_xml: urdf_xml.into(),
         }
     }
 }
 
-#[derive(Debug)]
-pub struct Emulator;
+#[derive(Debug, Clone, PartialEq)]
+pub struct JointStateSnapshot {
+    pub names: Vec<String>,
+    pub positions: Vec<f64>,
+}
 
-/// Placeholder for a ROS2-backed emulator that will publish `/robot_description` and `/joint_states`.
-pub fn start(_config: &EmulatorConfig) -> anyhow::Result<Emulator> {
-    Err(anyhow::anyhow!("Emulator not implemented yet"))
+#[derive(Debug, Default)]
+struct EmulatorState {
+    urdf_xml: String,
+    joints: BTreeMap<String, f64>,
+}
+
+#[derive(Debug, Clone, Resource)]
+pub struct Emulator {
+    state: Arc<Mutex<EmulatorState>>,
+}
+
+impl Emulator {
+    pub fn start(config: EmulatorConfig, initial_joints: BTreeMap<String, f64>) -> Self {
+        let state = EmulatorState {
+            urdf_xml: config.urdf_xml,
+            joints: initial_joints,
+        };
+        Self {
+            state: Arc::new(Mutex::new(state)),
+        }
+    }
+
+    /// Returns the current URDF string that would be published on `/robot_description`.
+    pub fn robot_description(&self) -> String {
+        let guard = self.state.lock().expect("state poisoned");
+        guard.urdf_xml.clone()
+    }
+
+    /// Applies joint command updates (e.g., from `/joint_commands`).
+    pub fn apply_joint_commands(&self, updates: impl IntoIterator<Item = (String, f64)>) {
+        let mut guard = self.state.lock().expect("state poisoned");
+        for (name, value) in updates {
+            guard.joints.insert(name, value);
+        }
+    }
+
+    /// Produces a deterministic snapshot analogous to a `/joint_states` message (sorted by joint name).
+    pub fn joint_state_snapshot(&self) -> JointStateSnapshot {
+        let guard = self.state.lock().expect("state poisoned");
+        let mut names: Vec<String> = guard.joints.keys().cloned().collect();
+        names.sort();
+        let positions = names
+            .iter()
+            .map(|n| guard.joints.get(n).copied().unwrap_or(0.0))
+            .collect();
+        JointStateSnapshot { names, positions }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    const URDF: &str = "<robot name=\"test\"></robot>";
+
+    fn cfg() -> EmulatorConfig {
+        EmulatorConfig::from_app(&AppConfig::new(0), "dummy", URDF)
+    }
+
     #[test]
-    fn emulator_stub_returns_error() {
-        let cfg = EmulatorConfig::from_app(&AppConfig::new(0), "dummy");
-        let err = start(&cfg).unwrap_err();
-        assert!(err.to_string().contains("Emulator"));
+    fn description_roundtrip() {
+        let emu = Emulator::start(cfg(), BTreeMap::new());
+        assert_eq!(emu.robot_description(), URDF);
+    }
+
+    #[test]
+    fn joint_state_snapshot_sorts() {
+        let mut joints = BTreeMap::new();
+        joints.insert("b_joint".to_string(), 1.0);
+        joints.insert("a_joint".to_string(), 0.5);
+        let emu = Emulator::start(cfg(), joints);
+        let snap = emu.joint_state_snapshot();
+        assert_eq!(snap.names, vec!["a_joint", "b_joint"]);
+        assert_eq!(snap.positions, vec![0.5, 1.0]);
+    }
+
+    #[test]
+    fn apply_commands_updates_state() {
+        let emu = Emulator::start(cfg(), BTreeMap::new());
+        emu.apply_joint_commands(vec![("elbow".to_string(), 0.7)]);
+        let snap = emu.joint_state_snapshot();
+        assert_eq!(snap.names, vec!["elbow"]);
+        assert_eq!(snap.positions, vec![0.7]);
     }
 }

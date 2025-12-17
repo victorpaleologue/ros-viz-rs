@@ -26,7 +26,12 @@ Next up:
 Next up:
 
 - [x] Implement URDF parsing pipeline behind feature flag and add first fixture assets.
-- [ ] Implement emulator message flow (publish robot_description/joint_states, accept joint commands) with a basic in-process test harness.
+- [x] Implement emulator message flow (publish robot_description/joint_states, accept joint commands) with a basic in-process test harness.
+
+Next up:
+
+- [ ] Wire emulator and URDF scene into Bevy app (load URDF, spawn scene placeholders).
+- [ ] Add ROS feature hooks to emulator (actual topic publish/subscribe via ros2-client) while keeping CI stubs intact.
 
 ## Upcoming milestones
 
