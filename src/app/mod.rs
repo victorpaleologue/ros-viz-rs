@@ -1,21 +1,18 @@
-use crate::config::{AppConfig, RenderConfig};
-use crate::emulator::{Emulator, EmulatorConfig};
+use crate::config::AppConfig;
 #[cfg(feature = "ros")]
-use crate::ros::{self, JointStateMsg, RosConfig};
+use crate::ros::{self, RosConfig};
 use crate::urdf::{parse_urdf, UrdfScene};
 use bevy::app::App;
 use bevy::prelude::*;
 use bevy::MinimalPlugins;
+use std::time::Duration;
 #[cfg(feature = "render")]
 use bevy::window::{PresentMode, WindowResolution};
 #[cfg(feature = "render")]
 use bevy::DefaultPlugins;
-use image::{Rgba, RgbaImage};
-use std::collections::{BTreeMap, HashMap};
-use tracing_subscriber::EnvFilter;
 
-// Temporary built-in URDF to keep the pipeline exercised without external assets.
-const DEFAULT_URDF_XML: &str = include_str!("../../assets/tests/urdf/box_bot.urdf");
+use std::collections::HashMap;
+use tracing_subscriber::EnvFilter;
 
 #[cfg(feature = "ros")]
 #[derive(Debug, Resource)]
@@ -25,8 +22,28 @@ struct RosState {
 
 #[derive(Debug, Clone, Resource)]
 pub struct RobotAssets {
-    pub urdf_xml: String,
-    pub scene: UrdfScene,
+    pub urdf_xml: Option<String>,
+    pub scene: Option<UrdfScene>,
+}
+
+#[derive(Debug, Clone, Resource, Default)]
+pub struct JointPositions {
+    pub positions: HashMap<String, f64>,
+}
+
+#[derive(Debug, Resource)]
+struct UrdfWaitTimer {
+    timer: Timer,
+    warned: bool,
+}
+
+impl Default for UrdfWaitTimer {
+    fn default() -> Self {
+        Self {
+            timer: Timer::new(Duration::from_secs(3), TimerMode::Once),
+            warned: false,
+        }
+    }
 }
 
 #[derive(Debug, Component)]
@@ -35,7 +52,7 @@ struct LinkNode;
 #[derive(Debug, Component)]
 struct JointNode {
     name: String,
-    position: f64,
+    axis: Vec3,  // Rotation axis from URDF
 }
 
 /// Initialize tracing and launch the (future) Bevy-based app.
@@ -51,13 +68,7 @@ pub fn run(config: AppConfig) -> anyhow::Result<()> {
 
     let mut app = build_app(&config);
 
-    // For headless with output_image, run a single tick and exit (CI-friendly).
-    // Otherwise, run the full Bevy loop for live visualization.
-    if config.headless && config.output_image.is_some() {
-        app.update();
-        return Ok(());
-    }
-
+    // Always run the full loop to receive ROS messages
     app.run();
     Ok(())
 }
@@ -68,15 +79,10 @@ pub fn build_app(config: &AppConfig) -> App {
     let mut app = App::new();
     app.insert_resource(config.clone());
 
-    let (urdf_xml, scene) = prepare_urdf_assets();
-    let initial_joints = zeroed_joints(&scene);
-    let emulator = Emulator::start(
-        EmulatorConfig::from_app(config, "ros_viz_robot", urdf_xml.clone()),
-        initial_joints,
-    );
-
-    app.insert_resource(RobotAssets { urdf_xml, scene });
-    app.insert_resource(emulator);
+    // Start with empty robot assets - will be populated from ROS /robot_description
+    app.insert_resource(RobotAssets { urdf_xml: None, scene: None });
+    app.insert_resource(JointPositions::default());
+    app.insert_resource(UrdfWaitTimer::default());
 
     #[cfg(feature = "ros")]
     {
@@ -122,19 +128,18 @@ pub fn build_app(config: &AppConfig) -> App {
 
     // Note: TransformPlugin is included in both DefaultPlugins and MinimalPlugins in Bevy 0.15
 
+    // Don't populate scene at startup - wait for ROS /robot_description
     // populate_urdf_scene needs Assets which are only available with DefaultPlugins (render mode)
     #[cfg(feature = "render")]
     if !config.headless {
-        app.add_systems(Startup, populate_urdf_scene);
+        app.add_systems(Update, check_and_spawn_robot);
     }
 
-    app.add_systems(Update, (tick_emulator, sync_joint_transforms).chain());
-    app.add_systems(Startup, capture_output_image);
+    app.add_systems(Update, sync_joint_transforms);
 
     #[cfg(feature = "ros")]
     {
-        app.add_systems(Startup, publish_robot_description);
-        app.add_systems(Update, (publish_joint_states, apply_joint_commands));
+        app.add_systems(Update, (receive_robot_description, receive_joint_states));
     }
 
     app
@@ -152,33 +157,18 @@ fn maybe_init_ros(config: &AppConfig) -> Option<ros::RosHandle> {
     }
 }
 
-fn prepare_urdf_assets() -> (String, UrdfScene) {
-    let xml = DEFAULT_URDF_XML.trim().to_string();
-    let scene = match parse_urdf(&xml) {
-        Ok(scene) => scene,
-        Err(err) => {
-            tracing::warn!(?err, "URDF parsing disabled or failed; using empty scene");
-            UrdfScene::empty()
-        }
-    };
-    (xml, scene)
-}
 
-fn zeroed_joints(scene: &UrdfScene) -> BTreeMap<String, f64> {
-    scene
-        .joints
-        .iter()
-        .map(|name| (name.clone(), 0.0))
-        .collect()
-}
 
 #[cfg(feature = "render")]
-fn populate_urdf_scene(
-    mut commands: Commands,
-    assets: Res<RobotAssets>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+fn populate_urdf_scene_inner(
+    commands: &mut Commands,
+    scene: &UrdfScene,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
 ) {
+    use std::collections::HashMap;
+    use std::f32::consts::PI;
+
     // Create link meshes - boxes to represent rigid bodies
     let link_mesh = meshes.add(Cuboid::new(1.2, 0.15, 0.15));
     let link_material = materials.add(StandardMaterial {
@@ -188,19 +178,7 @@ fn populate_urdf_scene(
         ..Default::default()
     });
 
-    // Spread links vertically with more spacing
-    for (idx, link) in assets.scene.links.iter().enumerate() {
-        let y_offset = idx as f32 * 1.0;  // Vertical spacing
-        commands.spawn((
-            LinkNode,
-            Mesh3d(link_mesh.clone()),
-            MeshMaterial3d(link_material.clone()),
-            Transform::from_xyz(0.0, y_offset, 0.0),
-            Name::new(format!("link:{link}")),
-        ));
-    }
-
-    // Create joint meshes - cylinders oriented along Y axis (rotation axis)
+    // Create joint mesh - cylinder (default aligned with Y axis)
     let joint_mesh = meshes.add(Cylinder::new(0.08, 0.3));  // radius, height
     let joint_material = materials.add(StandardMaterial {
         base_color: Color::srgb(0.9, 0.3, 0.2),
@@ -209,47 +187,118 @@ fn populate_urdf_scene(
         ..Default::default()
     });
 
-    // Position joints between links, cylinders represent rotation axes
-    for (idx, joint) in assets.scene.joints.iter().enumerate() {
-        let y_offset = idx as f32 * 1.0 + 0.5;  // Between links
-        commands.spawn((
+    // Build kinematic tree with parent-child relationships
+    let mut link_entities: HashMap<String, Entity> = HashMap::new();
+
+    // Find root link (link with no parent joint)
+    let child_links: std::collections::HashSet<_> = scene.joints
+        .iter()
+        .map(|j| j.child.as_str())
+        .collect();
+
+    let root_link = scene.links
+        .iter()
+        .find(|l| !child_links.contains(l.name.as_str()))
+        .map(|l| l.name.as_str())
+        .unwrap_or("base_link");
+
+    // Spawn root link at origin
+    if let Some(root_info) = scene.links.iter().find(|l| l.name == root_link) {
+        let entity = commands.spawn((
+            LinkNode,
+            Mesh3d(link_mesh.clone()),
+            MeshMaterial3d(link_material.clone()),
+            Transform::from_xyz(0.0, 0.0, 0.0),
+            Name::new(format!("link:{}", root_info.name)),
+        )).id();
+        link_entities.insert(root_info.name.clone(), entity);
+    }
+
+    // Spawn joints and their child links
+    for joint_info in &scene.joints {
+        // Get parent link entity (should exist)
+        let parent_entity = match link_entities.get(&joint_info.parent) {
+            Some(e) => *e,
+            None => continue, // Skip if parent not found
+        };
+
+        // Calculate joint transform from URDF origin
+        let origin_pos = Vec3::new(
+            joint_info.origin_xyz[0] as f32,
+            joint_info.origin_xyz[1] as f32,
+            joint_info.origin_xyz[2] as f32,
+        );
+
+        let origin_rot = Quat::from_euler(
+            EulerRot::XYZ,
+            joint_info.origin_rpy[0] as f32,
+            joint_info.origin_rpy[1] as f32,
+            joint_info.origin_rpy[2] as f32,
+        );
+
+        // Calculate rotation to align cylinder (default Y-axis) with joint axis
+        let axis = Vec3::new(
+            joint_info.axis[0] as f32,
+            joint_info.axis[1] as f32,
+            joint_info.axis[2] as f32,
+        ).normalize();
+
+        let default_axis = Vec3::Y;
+        let axis_rotation = if (axis - default_axis).length() < 0.01 {
+            Quat::IDENTITY
+        } else if (axis + default_axis).length() < 0.01 {
+            Quat::from_rotation_x(PI)
+        } else {
+            Quat::from_rotation_arc(default_axis, axis)
+        };
+
+        // Spawn joint as child of parent link
+        let joint_entity = commands.spawn((
             JointNode {
-                name: joint.clone(),
-                position: 0.0,
+                name: joint_info.name.clone(),
+                axis,  // Store axis for animation
             },
             Mesh3d(joint_mesh.clone()),
             MeshMaterial3d(joint_material.clone()),
-            // Cylinder is aligned with Y by default, which represents our rotation axis
-            Transform::from_xyz(0.0, y_offset, 0.0),
-            Name::new(format!("joint:{joint}")),
-        ));
+            Transform::from_translation(origin_pos + Vec3::Y * 0.6)  // Offset up along link
+                .with_rotation(origin_rot * axis_rotation),
+            Name::new(format!("joint:{}", joint_info.name)),
+        )).id();
+
+        commands.entity(parent_entity).add_child(joint_entity);
+
+        // Spawn child link as child of joint
+        if let Some(child_info) = scene.links.iter().find(|l| l.name == joint_info.child) {
+            let child_entity = commands.spawn((
+                LinkNode,
+                Mesh3d(link_mesh.clone()),
+                MeshMaterial3d(link_material.clone()),
+                Transform::from_xyz(0.0, 0.4, 0.0),  // Offset from joint
+                Name::new(format!("link:{}", child_info.name)),
+            )).id();
+
+            commands.entity(joint_entity).add_child(child_entity);
+            link_entities.insert(child_info.name.clone(), child_entity);
+        }
     }
 }
 
-fn tick_emulator(time: Res<bevy::time::Time>, emulator: Res<Emulator>) {
-    emulator.tick(time.delta_secs_f64());
-}
-
 fn sync_joint_transforms(
-    emulator: Res<Emulator>,
-    mut query: Query<(&mut JointNode, &mut Transform)>,
+    joint_positions: Res<JointPositions>,
+    mut joint_query: Query<(&JointNode, &Children)>,
+    mut child_query: Query<&mut Transform, Without<JointNode>>,
 ) {
-    let snapshot = emulator.joint_state_snapshot();
-    let values: HashMap<&str, f64> = snapshot
-        .names
-        .iter()
-        .zip(snapshot.positions.iter())
-        .map(|(name, pos)| (name.as_str(), *pos))
-        .collect();
-
-    for (mut node, mut transform) in query.iter_mut() {
-        if let Some(value) = values.get(node.name.as_str()) {
-            node.position = *value;
-            // Animate joint: translate on X and rotate on Y for visible motion
-            transform.translation.x = (*value as f32) * 0.5;  // Scale down translation
-            transform.rotation = Quat::from_rotation_y(*value as f32);
-            // Add some Z-axis rotation for more dynamic movement
-            transform.rotate_local_z(*value as f32 * 0.3);
+    for (node, children) in joint_query.iter_mut() {
+        if let Some(value) = joint_positions.positions.get(&node.name) {
+            // Rotate child links around the joint axis
+            // The joint entity itself stays in place, but we rotate its children
+            for &child_entity in children.iter() {
+                if let Ok(mut child_transform) = child_query.get_mut(child_entity) {
+                    // Apply rotation around the joint axis
+                    let rotation = Quat::from_axis_angle(node.axis, *value as f32);
+                    child_transform.rotation = rotation;
+                }
+            }
         }
     }
 }
@@ -285,84 +334,91 @@ fn spawn_render_basics(mut commands: Commands) {
 }
 
 #[cfg(feature = "ros")]
-fn publish_robot_description(assets: Res<RobotAssets>, ros: Option<Res<RosState>>) {
+fn receive_robot_description(
+    mut assets: ResMut<RobotAssets>,
+    ros: Option<Res<RosState>>,
+    mut wait_timer: ResMut<UrdfWaitTimer>,
+    time: Res<Time>,
+) {
+    // Only try to receive if we don't already have a URDF
+    if assets.urdf_xml.is_some() {
+        return;
+    }
+
+    // Update wait timer
+    wait_timer.timer.tick(time.delta());
+
     if let Some(ros) = ros.as_ref() {
-        if let Err(err) = ros.handle.publish_robot_description(&assets.urdf_xml) {
-            tracing::warn!(?err, "Failed to publish robot_description");
-        }
-    }
-}
-
-fn capture_output_image(config: Res<AppConfig>, assets: Res<RobotAssets>, emulator: Res<Emulator>) {
-    if let Some(path) = &config.output_image {
-        let img = render_stub_image(&assets, &emulator, &config.render);
-        if let Err(err) = img.save(path) {
-            tracing::warn!(?err, "Failed to save output image");
-        } else {
-            tracing::info!(?path, "Saved output image");
-        }
-    }
-}
-
-fn render_stub_image(
-    assets: &RobotAssets,
-    emulator: &Emulator,
-    render: &RenderConfig,
-) -> RgbaImage {
-    let width = render.width.max(1);
-    let height = render.height.max(1);
-    let bg = Rgba([20, 20, 28, 255]);
-    let mut img = RgbaImage::from_pixel(width, height, bg);
-
-    let snapshot = emulator.joint_state_snapshot();
-    let joint_count = snapshot.names.len().max(1);
-    let bar_width = (width / joint_count as u32).max(1);
-
-    for (idx, value) in snapshot.positions.iter().enumerate() {
-        let x_start = (idx as u32).saturating_mul(bar_width).min(width - 1);
-        let intensity = ((*value * 50.0).abs() as u8).saturating_add(40);
-        let color = Rgba([intensity, 180, 220, 255]);
-        for x in x_start..width.min(x_start + bar_width) {
-            for y in 0..height {
-                img.put_pixel(x, y, color);
+        match ros.handle.try_take_robot_description() {
+            Ok(Some(urdf_xml)) => {
+                tracing::info!("✓ Received robot_description from ROS topic");
+                match parse_urdf(&urdf_xml) {
+                    Ok(scene) => {
+                        tracing::info!("Parsed URDF: {} links, {} joints", scene.links.len(), scene.joints.len());
+                        assets.urdf_xml = Some(urdf_xml);
+                        assets.scene = Some(scene);
+                    }
+                    Err(err) => {
+                        tracing::error!(?err, "Failed to parse URDF from /robot_description");
+                    }
+                }
             }
+            Ok(None) => {
+                // No message yet - warn after timeout
+                if wait_timer.timer.finished() && !wait_timer.warned {
+                    wait_timer.warned = true;
+                    tracing::warn!(
+                        "No /robot_description received after {} seconds. \
+                        Make sure a ROS2 node is publishing the URDF on domain {}. \
+                        Common publishers: robot_state_publisher, joint_state_publisher",
+                        wait_timer.timer.duration().as_secs(),
+                        ros.handle.domain_id()
+                    );
+                }
+            }
+            Err(err) => tracing::warn!(?err, "Failed to read /robot_description"),
+        }
+    } else {
+        // No ROS connection
+        if wait_timer.timer.finished() && !wait_timer.warned {
+            wait_timer.warned = true;
+            tracing::warn!("ROS connection not available - cannot receive robot_description");
         }
     }
-
-    // Stamp link count on the first pixel to keep deterministic variation with scene changes.
-    let link_marker = assets.scene.link_count().min(255) as u8;
-    img.put_pixel(0, 0, Rgba([bg[0], link_marker, bg[2], 255]));
-    img
 }
 
 #[cfg(feature = "ros")]
-fn publish_joint_states(emulator: Res<Emulator>, ros: Option<Res<RosState>>) {
+fn receive_joint_states(
+    mut joint_positions: ResMut<JointPositions>,
+    ros: Option<Res<RosState>>,
+) {
     if let Some(ros) = ros.as_ref() {
-        let snapshot = emulator.joint_state_snapshot();
-        let msg = JointStateMsg {
-            names: snapshot.names,
-            positions: snapshot.positions,
-        };
-        if let Err(err) = ros.handle.publish_joint_states(msg) {
-            tracing::warn!(?err, "Failed to publish joint_states");
-        }
-    }
-}
-
-#[cfg(feature = "ros")]
-fn apply_joint_commands(emulator: Res<Emulator>, ros: Option<Res<RosState>>) {
-    if let Some(ros) = ros.as_ref() {
-        match ros.handle.try_take_joint_commands() {
-            Ok(Some(cmds)) => {
-                let updates = cmds
-                    .names
-                    .into_iter()
-                    .zip(cmds.positions.into_iter())
-                    .collect::<Vec<_>>();
-                emulator.apply_joint_commands(updates);
+        match ros.handle.try_take_joint_states() {
+            Ok(Some(msg)) => {
+                // Update joint positions from ROS message
+                for (name, position) in msg.name.iter().zip(msg.position.iter()) {
+                    joint_positions.positions.insert(name.clone(), *position);
+                }
             }
             Ok(None) => {}
-            Err(err) => tracing::warn!(?err, "Failed to read joint_commands"),
+            Err(err) => tracing::warn!(?err, "Failed to read /joint_states"),
+        }
+    }
+}
+
+#[cfg(feature = "render")]
+fn check_and_spawn_robot(
+    mut commands: Commands,
+    assets: Res<RobotAssets>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    existing_links: Query<&LinkNode>,
+) {
+    // Only spawn if we have a scene and haven't spawned yet
+    if let Some(scene) = &assets.scene {
+        if existing_links.is_empty() {
+            tracing::info!("Spawning robot from URDF");
+            populate_urdf_scene_inner(&mut commands, scene, &mut meshes, &mut materials);
         }
     }
 }
@@ -389,7 +445,7 @@ mod tests {
         let stored = app.world().get_resource::<AppConfig>().cloned();
         assert_eq!(stored, Some(cfg));
         assert!(app.world().contains_resource::<RobotAssets>());
-        assert!(app.world().contains_resource::<Emulator>());
+        assert!(app.world().contains_resource::<JointPositions>());
     }
 
     #[test]
@@ -399,7 +455,7 @@ mod tests {
         let stored = app.world().get_resource::<AppConfig>().cloned();
         assert_eq!(stored, Some(cfg));
         assert!(app.world().contains_resource::<RobotAssets>());
-        assert!(app.world().contains_resource::<Emulator>());
+        assert!(app.world().contains_resource::<JointPositions>());
     }
 
     #[test]

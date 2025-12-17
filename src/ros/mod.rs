@@ -2,8 +2,8 @@ use crate::config::AppConfig;
 
 #[cfg(feature = "ros")]
 use ros2_client::{
-    Context, Message, MessageTypeName, Name, Node, NodeName, NodeOptions, Subscription,
-    DEFAULT_PUBLISHER_QOS, DEFAULT_SUBSCRIPTION_QOS,
+    builtin_interfaces::Time, Context, Message, MessageTypeName, Name, Node, NodeName, NodeOptions,
+    Subscription, DEFAULT_SUBSCRIPTION_QOS,
 };
 #[cfg(feature = "ros")]
 use serde::{Deserialize, Serialize};
@@ -37,9 +37,29 @@ pub struct RosHandle;
 
 #[cfg(feature = "ros")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Header {
+    pub stamp: Time,
+    pub frame_id: String,
+}
+
+#[cfg(feature = "ros")]
+impl Default for Header {
+    fn default() -> Self {
+        Self {
+            stamp: Time::from_nanos(0),
+            frame_id: String::default(),
+        }
+    }
+}
+
+#[cfg(feature = "ros")]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct JointStateMsg {
-    pub names: Vec<String>,
-    pub positions: Vec<f64>,
+    pub header: Header,
+    pub name: Vec<String>,
+    pub position: Vec<f64>,
+    pub velocity: Vec<f64>,
+    pub effort: Vec<f64>,
 }
 
 #[cfg(feature = "ros")]
@@ -48,9 +68,9 @@ impl Message for JointStateMsg {}
 #[cfg(feature = "ros")]
 pub struct RosHandle {
     _node: Node,
-    robot_description_pub: ros2_client::Publisher<String>,
-    joint_state_pub: ros2_client::Publisher<JointStateMsg>,
-    joint_command_sub: Subscription<JointStateMsg>,
+    domain_id: u32,
+    robot_description_sub: Subscription<String>,
+    joint_state_sub: Subscription<JointStateMsg>,
 }
 
 #[cfg(feature = "ros")]
@@ -74,31 +94,24 @@ pub fn connect(config: &RosConfig) -> anyhow::Result<RosHandle> {
     let robot_description_topic = node.create_topic(
         &Name::new("/", "robot_description")?,
         MessageTypeName::new("std_msgs", "String"),
-        &DEFAULT_PUBLISHER_QOS,
+        &DEFAULT_SUBSCRIPTION_QOS,
     )?;
 
     let joint_states_topic = node.create_topic(
         &Name::new("/", "joint_states")?,
         MessageTypeName::new("sensor_msgs", "JointState"),
-        &DEFAULT_PUBLISHER_QOS,
-    )?;
-
-    let joint_commands_topic = node.create_topic(
-        &Name::new("/", "joint_commands")?,
-        MessageTypeName::new("sensor_msgs", "JointState"),
         &DEFAULT_SUBSCRIPTION_QOS,
     )?;
 
-    let robot_description_pub = node.create_publisher::<String>(&robot_description_topic, None)?;
-    let joint_state_pub = node.create_publisher::<JointStateMsg>(&joint_states_topic, None)?;
-    let joint_command_sub =
-        node.create_subscription::<JointStateMsg>(&joint_commands_topic, None)?;
+    let robot_description_sub =
+        node.create_subscription::<String>(&robot_description_topic, None)?;
+    let joint_state_sub = node.create_subscription::<JointStateMsg>(&joint_states_topic, None)?;
 
     Ok(RosHandle {
         _node: node,
-        robot_description_pub,
-        joint_state_pub,
-        joint_command_sub,
+        domain_id: config.domain_id,
+        robot_description_sub,
+        joint_state_sub,
     })
 }
 
@@ -112,45 +125,33 @@ pub fn connect(_config: &RosConfig) -> anyhow::Result<RosHandle> {
 
 #[cfg(feature = "ros")]
 impl RosHandle {
-    pub fn publish_robot_description(&self, urdf_xml: &str) -> anyhow::Result<()> {
-        self.robot_description_pub
-            .publish(urdf_xml.to_string())
-            .map_err(|e| anyhow::anyhow!("publish robot_description failed: {e:?}"))?;
-        Ok(())
+    pub fn domain_id(&self) -> u32 {
+        self.domain_id
     }
 
-    pub fn publish_joint_states(&self, msg: JointStateMsg) -> anyhow::Result<()> {
-        self.joint_state_pub
-            .publish(msg)
-            .map_err(|e| anyhow::anyhow!("publish joint_states failed: {e:?}"))?;
-        Ok(())
-    }
-
-    /// Attempts to take a joint command message if available.
-    pub fn try_take_joint_commands(&self) -> anyhow::Result<Option<JointStateMsg>> {
-        match self.joint_command_sub.take() {
+    pub fn try_take_robot_description(&self) -> anyhow::Result<Option<String>> {
+        match self.robot_description_sub.take() {
             Ok(Some((msg, _info))) => {
-                debug!("received joint command message");
+                debug!(
+                    "received robot_description message, length: {} bytes",
+                    msg.len()
+                );
                 Ok(Some(msg))
             }
             Ok(None) => Ok(None),
-            Err(err) => Err(anyhow::anyhow!("read joint_commands failed: {err:?}")),
+            Err(err) => Err(anyhow::anyhow!("read robot_description failed: {err:?}")),
         }
     }
 
-    pub(crate) fn joint_command_publisher(
-        &self,
-    ) -> anyhow::Result<ros2_client::Publisher<JointStateMsg>> {
-        let ctx = Context::new()?;
-        let node_name = NodeName::new("/", "ros_viz_test_publisher")?;
-        let mut node = ctx.new_node(node_name, NodeOptions::new())?;
-        let topic = node.create_topic(
-            &Name::new("/", "joint_commands")?,
-            MessageTypeName::new("sensor_msgs", "JointState"),
-            &DEFAULT_PUBLISHER_QOS,
-        )?;
-        node.create_publisher::<JointStateMsg>(&topic, None)
-            .map_err(|e| anyhow::anyhow!("create joint_commands publisher failed: {e:?}"))
+    pub fn try_take_joint_states(&self) -> anyhow::Result<Option<JointStateMsg>> {
+        match self.joint_state_sub.take() {
+            Ok(Some((msg, _info))) => {
+                debug!("received joint_states message");
+                Ok(Some(msg))
+            }
+            Ok(None) => Ok(None),
+            Err(err) => Err(anyhow::anyhow!("read joint_states failed: {err:?}")),
+        }
     }
 }
 
@@ -172,38 +173,11 @@ mod tests {
 #[cfg(all(test, feature = "ros"))]
 mod feature_tests {
     use super::*;
-    use std::thread::sleep;
-    use std::time::{Duration, Instant};
 
     #[test]
-    fn loopback_joint_commands() {
+    fn test_ros_connect() {
         let cfg = RosConfig::from_app(&AppConfig::new(0));
         let handle = connect(&cfg).expect("connect ros");
-        let publisher = handle
-            .joint_command_publisher()
-            .expect("create joint_commands publisher");
-
-        let msg = JointStateMsg {
-            names: vec!["shoulder".to_string()],
-            positions: vec![1.0],
-        };
-        publisher.publish(msg).expect("publish joint_commands");
-
-        let start = Instant::now();
-        let mut received = None;
-        while start.elapsed() < Duration::from_millis(500) {
-            match handle.try_take_joint_commands() {
-                Ok(Some(cmds)) => {
-                    received = Some(cmds);
-                    break;
-                }
-                Ok(None) => sleep(Duration::from_millis(10)),
-                Err(err) => panic!("read joint_commands failed: {err:?}"),
-            }
-        }
-
-        let msg = received.expect("expected joint_commands message");
-        assert_eq!(msg.names, vec!["shoulder".to_string()]);
-        assert_eq!(msg.positions, vec![1.0]);
+        assert_eq!(handle.domain_id(), 0);
     }
 }
