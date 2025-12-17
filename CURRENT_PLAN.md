@@ -35,7 +35,7 @@ Next up:
 
 Next up:
 
-- [ ] Add ROS loopback test coverage under `ros` feature (joint_commands publish/receive, joint_states roundtrip).
+- [x] Add ROS loopback test coverage under `ros` feature (joint_commands publish/receive, joint_states roundtrip).
 - [ ] Wire rendering pipeline and image capture harness.
 
 ## Upcoming milestones
