@@ -12,6 +12,7 @@ Early scaffolding. CLI parsing, docs, and CI are being set up; ROS2 + Bevy funct
 - CLI (planned): `cargo run -- --domain <id>` or set `ROS_DOMAIN_ID`. Defaults to env when flag is absent.
 - Rendering flags: `--headless` for offscreen, `--output-image <path>` to save a frame, `--width/--height` for resolution.
 - Features: a `ros` feature will enable ROS2 networking; tests/emulator will work without a live ROS graph.
+- URDF parsing is behind the `urdf` feature (uses urdf-rs/k/nalgebra/mesh-loader); without it, parsing stubs error out to keep CI lightweight.
 
 ## Development workflow
 

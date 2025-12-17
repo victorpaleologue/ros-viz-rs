@@ -8,6 +8,7 @@
 - When the `ros` feature is absent, ROS connectivity surfaces a clear error to keep CI runnable; real transport will live behind the feature-gated path.
 - URDF parsing will rely on `urdf-rs`, `k`, and `nalgebra`; mesh loading will use `mesh-loader`. Bevy meshes will be generated from these outputs.
 - Until URDF dependencies are wired, a stub parser exists; real ingestion will be feature-gated to keep CI green.
+- URDF parsing is feature-gated (`urdf`); without it, parse requests return an explicit error. Fixture parsing tests run only with the feature enabled.
 - A lightweight robot emulator will publish `/robot_description` and `/joint_states`, and accept joint updates for tests.
 - Image rendering will produce offscreen frames to files to support manual inspection and automated comparisons.
 - Tests aim to be runnable with `cargo test` using the emulator and offscreen rendering; integration tests will drive the Bevy app headless where possible.

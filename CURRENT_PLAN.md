@@ -25,7 +25,7 @@ Next up:
 
 Next up:
 
-- [ ] Implement URDF parsing pipeline behind feature flag and add first fixture assets.
+- [x] Implement URDF parsing pipeline behind feature flag and add first fixture assets.
 - [ ] Implement emulator message flow (publish robot_description/joint_states, accept joint commands) with a basic in-process test harness.
 
 ## Upcoming milestones
