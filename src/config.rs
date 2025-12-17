@@ -1,3 +1,4 @@
+use bevy::prelude::Resource;
 use clap::Parser;
 use std::path::PathBuf;
 
@@ -20,13 +21,28 @@ pub struct CliArgs {
     /// Optional output image path to save a rendered frame.
     #[arg(long, value_name = "PATH")]
     pub output_image: Option<PathBuf>,
+
+    /// Render width in pixels (windowed or headless capture).
+    #[arg(long, default_value_t = RenderConfig::DEFAULT_WIDTH, value_name = "PX")]
+    pub width: u32,
+
+    /// Render height in pixels (windowed or headless capture).
+    #[arg(long, default_value_t = RenderConfig::DEFAULT_HEIGHT, value_name = "PX")]
+    pub height: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Resource)]
 pub struct AppConfig {
     pub domain_id: u32,
     pub headless: bool,
     pub output_image: Option<PathBuf>,
+    pub render: RenderConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenderConfig {
+    pub width: u32,
+    pub height: u32,
 }
 
 impl AppConfig {
@@ -37,6 +53,25 @@ impl AppConfig {
             domain_id,
             headless: false,
             output_image: None,
+            render: RenderConfig::default(),
+        }
+    }
+}
+
+impl RenderConfig {
+    pub const DEFAULT_WIDTH: u32 = 800;
+    pub const DEFAULT_HEIGHT: u32 = 600;
+
+    pub fn new(width: u32, height: u32) -> Self {
+        Self { width, height }
+    }
+}
+
+impl Default for RenderConfig {
+    fn default() -> Self {
+        Self {
+            width: Self::DEFAULT_WIDTH,
+            height: Self::DEFAULT_HEIGHT,
         }
     }
 }
@@ -48,6 +83,7 @@ impl CliArgs {
             domain_id: domain,
             headless: self.headless,
             output_image: self.output_image,
+            render: RenderConfig::new(self.width, self.height),
         }
     }
 }
@@ -81,6 +117,8 @@ mod tests {
         assert_eq!(config.domain_id, AppConfig::DEFAULT_DOMAIN_ID);
         assert!(!config.headless);
         assert!(config.output_image.is_none());
+        assert_eq!(config.render.width, RenderConfig::DEFAULT_WIDTH);
+        assert_eq!(config.render.height, RenderConfig::DEFAULT_HEIGHT);
     }
 
     #[test]
@@ -91,6 +129,8 @@ mod tests {
         assert_eq!(config.domain_id, 42);
         assert!(!config.headless);
         assert!(config.output_image.is_none());
+        assert_eq!(config.render.width, RenderConfig::DEFAULT_WIDTH);
+        assert_eq!(config.render.height, RenderConfig::DEFAULT_HEIGHT);
     }
 
     #[test]
@@ -114,5 +154,13 @@ mod tests {
             cfg.output_image.as_deref(),
             Some(std::path::Path::new("out.png"))
         );
+    }
+
+    #[test]
+    fn parses_resolution() {
+        let cfg =
+            CliArgs::parse_from(["ros-viz-rs", "--width", "1024", "--height", "576"]).into_config();
+        assert_eq!(cfg.render.width, 1024);
+        assert_eq!(cfg.render.height, 576);
     }
 }

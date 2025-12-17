@@ -18,9 +18,10 @@ Bootstrap the project with clear docs, CI, and a minimal runnable crate scaffold
 
 Next up:
 
-- [ ] Add rendering config (headless/windowed, resolution) to CLI/config and Bevy builder skeleton.
-- [ ] Stub Bevy app builder with headless toggle and placeholder systems; keep tests headless-capable.
+- [x] Add rendering config (headless/windowed, resolution) to CLI/config and Bevy builder skeleton.
+- [x] Stub Bevy app builder with headless toggle and placeholder systems; keep tests headless-capable.
 - [ ] Draft URDF ingest/mesh loading API surface and fixture layout (assets/ + tests/ helpers).
+- [ ] Plan emulator implementation details (topics/messages, joint update handling, timing) and test harness hooks.
 
 ## Upcoming milestones
 
