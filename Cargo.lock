@@ -1009,7 +1009,7 @@ dependencies = [
  "bytemuck",
  "derive_more",
  "futures-lite",
- "image",
+ "image 0.25.9",
  "ktx2",
  "ruzstd",
  "serde",
@@ -1397,7 +1397,7 @@ dependencies = [
  "downcast-rs",
  "encase",
  "futures-lite",
- "image",
+ "image 0.25.9",
  "js-sys",
  "ktx2",
  "naga",
@@ -2166,6 +2166,12 @@ dependencies = [
  "termcolor",
  "unicode-width",
 ]
+
+[[package]]
+name = "color_quant"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d7b894f5411737b7867f4827955924d7c254fc9f4d91a6aad6b097804b1018b"
 
 [[package]]
 name = "colorchoice"
@@ -3350,6 +3356,19 @@ dependencies = [
 
 [[package]]
 name = "image"
+version = "0.24.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5690139d2f55868e080017335e4b94cb7414274c74f1669c84fb5feba2c9f69d"
+dependencies = [
+ "bytemuck",
+ "byteorder",
+ "color_quant",
+ "num-traits",
+ "png 0.17.16",
+]
+
+[[package]]
+name = "image"
 version = "0.25.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6506c6c10786659413faa717ceebcb8f70731c0a60cbae39795fdf114519c1a"
@@ -3358,7 +3377,7 @@ dependencies = [
  "byteorder-lite",
  "moxcms",
  "num-traits",
- "png",
+ "png 0.18.0",
 ]
 
 [[package]]
@@ -4682,6 +4701,19 @@ dependencies = [
 
 [[package]]
 name = "png"
+version = "0.17.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "82151a2fc869e011c153adc57cf2789ccb8d9906ce52c0b39a6b5697749d7526"
+dependencies = [
+ "bitflags 1.3.2",
+ "crc32fast",
+ "fdeflate",
+ "flate2",
+ "miniz_oxide",
+]
+
+[[package]]
+name = "png"
 version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97baced388464909d42d89643fe4361939af9b7ce7a31ee32a168f832a70f2a0"
@@ -5063,6 +5095,7 @@ dependencies = [
  "bevy 0.15.3",
  "bevy_egui",
  "clap",
+ "image 0.24.9",
  "k",
  "mesh-loader",
  "nalgebra 0.33.2",

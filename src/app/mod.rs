@@ -1,4 +1,4 @@
-use crate::config::AppConfig;
+use crate::config::{AppConfig, RenderConfig};
 use crate::emulator::{Emulator, EmulatorConfig};
 #[cfg(feature = "ros")]
 use crate::ros::{self, JointStateMsg, RosConfig};
@@ -7,6 +7,7 @@ use bevy::app::App;
 use bevy::prelude::*;
 use bevy::transform::TransformPlugin;
 use bevy::MinimalPlugins;
+use image::{Rgba, RgbaImage};
 use std::collections::{BTreeMap, HashMap};
 use tracing_subscriber::EnvFilter;
 
@@ -83,6 +84,7 @@ pub fn build_app(config: &AppConfig) -> App {
     app.add_plugins(TransformPlugin);
     app.add_systems(Startup, populate_urdf_scene);
     app.add_systems(Update, sync_joint_transforms);
+    app.add_systems(Startup, capture_output_image);
 
     #[cfg(feature = "ros")]
     {
@@ -172,6 +174,52 @@ fn publish_robot_description(assets: Res<RobotAssets>, ros: Option<Res<RosState>
     }
 }
 
+fn capture_output_image(
+    config: Res<AppConfig>,
+    assets: Res<RobotAssets>,
+    emulator: Res<Emulator>,
+) {
+    if let Some(path) = &config.output_image {
+        let img = render_stub_image(&assets, &emulator, &config.render);
+        if let Err(err) = img.save(path) {
+            tracing::warn!(?err, "Failed to save output image");
+        } else {
+            tracing::info!(?path, "Saved output image");
+        }
+    }
+}
+
+fn render_stub_image(
+    assets: &RobotAssets,
+    emulator: &Emulator,
+    render: &RenderConfig,
+) -> RgbaImage {
+    let width = render.width.max(1);
+    let height = render.height.max(1);
+    let bg = Rgba([20, 20, 28, 255]);
+    let mut img = RgbaImage::from_pixel(width, height, bg);
+
+    let snapshot = emulator.joint_state_snapshot();
+    let joint_count = snapshot.names.len().max(1);
+    let bar_width = (width / joint_count as u32).max(1);
+
+    for (idx, value) in snapshot.positions.iter().enumerate() {
+        let x_start = (idx as u32).saturating_mul(bar_width).min(width - 1);
+        let intensity = ((*value * 50.0).abs() as u8).saturating_add(40);
+        let color = Rgba([intensity, 180, 220, 255]);
+        for x in x_start..width.min(x_start + bar_width) {
+            for y in 0..height {
+                img.put_pixel(x, y, color);
+            }
+        }
+    }
+
+    // Stamp link count on the first pixel to keep deterministic variation with scene changes.
+    let link_marker = assets.scene.link_count().min(255) as u8;
+    img.put_pixel(0, 0, Rgba([bg[0], link_marker, bg[2], 255]));
+    img
+}
+
 #[cfg(feature = "ros")]
 fn publish_joint_states(emulator: Res<Emulator>, ros: Option<Res<RosState>>) {
     if let Some(ros) = ros.as_ref() {
@@ -258,6 +306,30 @@ mod tests {
 
         assert_eq!(link_count, assets.scene.link_count());
         assert_eq!(joint_count, assets.scene.joint_count());
+    }
+
+    #[test]
+    fn stub_image_matches_resolution_and_marks_joint() {
+        let scene = UrdfScene {
+            joints: vec!["j1".to_string()],
+            links: vec!["l1".to_string()],
+        };
+        let assets = RobotAssets {
+            urdf_xml: "<robot></robot>".to_string(),
+            scene,
+        };
+        let emulator = Emulator::start(
+            EmulatorConfig::from_app(&AppConfig::new(0), "dummy", "<robot></robot>"),
+            BTreeMap::new(),
+        );
+
+        emulator.apply_joint_commands(vec![("j1".to_string(), 1.0)]);
+        let img = render_stub_image(&assets, &emulator, &RenderConfig::new(64, 48));
+        assert_eq!(img.width(), 64);
+        assert_eq!(img.height(), 48);
+        let top_left = img.get_pixel(0, 0);
+        let sample_bar = img.get_pixel(1, 10);
+        assert_ne!(top_left, sample_bar, "joint bar should differ from marker");
     }
 
     #[cfg(feature = "urdf")]
