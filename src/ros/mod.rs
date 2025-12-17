@@ -125,6 +125,19 @@ impl RosHandle {
             Err(err) => Err(anyhow::anyhow!("read joint_commands failed: {err:?}")),
         }
     }
+
+    pub(crate) fn joint_command_publisher(
+        &self,
+    ) -> anyhow::Result<ros2_client::Publisher<JointStateMsg>> {
+        let topic = self.ctx.create_topic(
+            TOPIC_JOINT_COMMANDS.to_string(),
+            MessageTypeName::new("sensor_msgs", "JointState"),
+            &DEFAULT_PUBLISHER_QOS,
+        )?;
+        self.ctx
+            .create_publisher::<JointStateMsg>(&topic, None)
+            .map_err(|e| anyhow::anyhow!("create joint_commands publisher failed: {e:?}"))
+    }
 }
 
 #[cfg(test)]
@@ -139,5 +152,44 @@ mod tests {
             err.to_string().contains("ros"),
             "error should mention ros feature"
         );
+    }
+}
+
+#[cfg(all(test, feature = "ros"))]
+mod feature_tests {
+    use super::*;
+    use std::thread::sleep;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn loopback_joint_commands() {
+        let cfg = RosConfig::from_app(&AppConfig::new(0));
+        let handle = connect(&cfg).expect("connect ros");
+        let publisher = handle
+            .joint_command_publisher()
+            .expect("create joint_commands publisher");
+
+        let msg = JointStateMsg {
+            names: vec!["shoulder".to_string()],
+            positions: vec![1.0],
+        };
+        publisher.publish(msg).expect("publish joint_commands");
+
+        let start = Instant::now();
+        let mut received = None;
+        while start.elapsed() < Duration::from_millis(500) {
+            match handle.try_take_joint_commands() {
+                Ok(Some(cmds)) => {
+                    received = Some(cmds);
+                    break;
+                }
+                Ok(None) => sleep(Duration::from_millis(10)),
+                Err(err) => panic!("read joint_commands failed: {err:?}"),
+            }
+        }
+
+        let msg = received.expect("expected joint_commands message");
+        assert_eq!(msg.names, vec!["shoulder".to_string()]);
+        assert_eq!(msg.positions, vec![1.0]);
     }
 }
