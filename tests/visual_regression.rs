@@ -35,7 +35,9 @@ fn visual_regression_tests() -> Result<()> {
     // Check if ImageMagick is available
     if !is_imagemagick_available() {
         eprintln!("⚠️  ImageMagick not found - skipping visual regression tests");
-        eprintln!("   Install with: brew install imagemagick (macOS) or apt install imagemagick (Linux)");
+        eprintln!(
+            "   Install with: brew install imagemagick (macOS) or apt install imagemagick (Linux)"
+        );
         return Ok(());
     }
 
@@ -71,7 +73,11 @@ fn visual_regression_tests() -> Result<()> {
         if passed {
             println!("   ✓ PASS (diff: {:.4}%)", diff * 100.0);
         } else {
-            println!("   ✗ FAIL (diff: {:.4}% > {:.4}%)", diff * 100.0, MAX_DIFF_THRESHOLD * 100.0);
+            println!(
+                "   ✗ FAIL (diff: {:.4}% > {:.4}%)",
+                diff * 100.0,
+                MAX_DIFF_THRESHOLD * 100.0
+            );
             println!("   Reference: {}", test.reference_image);
             println!("   Generated: {}", output_path.display());
             println!("   Diff image: {}", diff_path.display());
@@ -85,13 +91,18 @@ fn visual_regression_tests() -> Result<()> {
     println!("{}", "=".repeat(60));
     for (name, passed, diff) in &results {
         let status = if *passed { "✓ PASS" } else { "✗ FAIL" };
-        let diff_str = diff.map(|d| format!("{:.4}%", d * 100.0))
+        let diff_str = diff
+            .map(|d| format!("{:.4}%", d * 100.0))
             .unwrap_or_else(|| "N/A".to_string());
         println!("{:20} {} (diff: {})", name, status, diff_str);
     }
     println!("{}", "=".repeat(60));
 
-    assert!(all_passed, "Visual regression tests failed - see diff images in {}", temp_dir.display());
+    assert!(
+        all_passed,
+        "Visual regression tests failed - see diff images in {}",
+        temp_dir.display()
+    );
 
     Ok(())
 }
@@ -145,7 +156,8 @@ fn parse_rmse(stderr: &str) -> Result<f64> {
     if let Some(start) = stderr.find('(') {
         if let Some(end) = stderr.find(')') {
             let diff_str = &stderr[start + 1..end];
-            return diff_str.parse::<f64>()
+            return diff_str
+                .parse::<f64>()
                 .map_err(|e| anyhow::anyhow!("Failed to parse RMSE: {}", e));
         }
     }

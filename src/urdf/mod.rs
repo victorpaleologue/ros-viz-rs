@@ -109,7 +109,7 @@ mod tests {
 mod feature_tests {
     use super::*;
 
-    const BOX_BOT: &str = include_str!("../../assets/tests/urdf/box_bot.urdf");
+    const BOX_BOT: &str = include_str!("../../test-data/urdf/box_bot.urdf");
 
     #[test]
     fn parses_fixture_counts() {
