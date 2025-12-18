@@ -46,14 +46,8 @@ impl Default for UrdfWaitTimer {
     }
 }
 
-#[derive(Debug, Component)]
-struct LinkNode;
-
-#[derive(Debug, Component)]
-struct JointNode {
-    name: String,
-    axis: Vec3,  // Rotation axis from URDF
-}
+// Re-export components from visualization module
+use crate::visualization::{JointNode, LinkNode};
 
 /// Initialize tracing and launch the (future) Bevy-based app.
 /// Tracing setup mirrors https://docs.rs/tracing-subscriber/latest/tracing_subscriber/fmt/index.html
@@ -166,121 +160,7 @@ fn populate_urdf_scene_inner(
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
 ) {
-    use std::collections::HashMap;
-    use std::f32::consts::PI;
-
-    // Create link meshes - boxes to represent rigid bodies
-    let link_mesh = meshes.add(Cuboid::new(1.2, 0.15, 0.15));
-    let link_material = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.2, 0.6, 0.8),
-        metallic: 0.3,
-        perceptual_roughness: 0.5,
-        ..Default::default()
-    });
-
-    // Create joint mesh - cylinder (default aligned with Y axis)
-    let joint_mesh = meshes.add(Cylinder::new(0.08, 0.3));  // radius, height
-    let joint_material = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.9, 0.3, 0.2),
-        metallic: 0.5,
-        perceptual_roughness: 0.3,
-        ..Default::default()
-    });
-
-    // Build kinematic tree with parent-child relationships
-    let mut link_entities: HashMap<String, Entity> = HashMap::new();
-
-    // Find root link (link with no parent joint)
-    let child_links: std::collections::HashSet<_> = scene.joints
-        .iter()
-        .map(|j| j.child.as_str())
-        .collect();
-
-    let root_link = scene.links
-        .iter()
-        .find(|l| !child_links.contains(l.name.as_str()))
-        .map(|l| l.name.as_str())
-        .unwrap_or("base_link");
-
-    // Spawn root link at origin
-    if let Some(root_info) = scene.links.iter().find(|l| l.name == root_link) {
-        let entity = commands.spawn((
-            LinkNode,
-            Mesh3d(link_mesh.clone()),
-            MeshMaterial3d(link_material.clone()),
-            Transform::from_xyz(0.0, 0.0, 0.0),
-            Name::new(format!("link:{}", root_info.name)),
-        )).id();
-        link_entities.insert(root_info.name.clone(), entity);
-    }
-
-    // Spawn joints and their child links
-    for joint_info in &scene.joints {
-        // Get parent link entity (should exist)
-        let parent_entity = match link_entities.get(&joint_info.parent) {
-            Some(e) => *e,
-            None => continue, // Skip if parent not found
-        };
-
-        // Calculate joint transform from URDF origin
-        let origin_pos = Vec3::new(
-            joint_info.origin_xyz[0] as f32,
-            joint_info.origin_xyz[1] as f32,
-            joint_info.origin_xyz[2] as f32,
-        );
-
-        let origin_rot = Quat::from_euler(
-            EulerRot::XYZ,
-            joint_info.origin_rpy[0] as f32,
-            joint_info.origin_rpy[1] as f32,
-            joint_info.origin_rpy[2] as f32,
-        );
-
-        // Calculate rotation to align cylinder (default Y-axis) with joint axis
-        let axis = Vec3::new(
-            joint_info.axis[0] as f32,
-            joint_info.axis[1] as f32,
-            joint_info.axis[2] as f32,
-        ).normalize();
-
-        let default_axis = Vec3::Y;
-        let axis_rotation = if (axis - default_axis).length() < 0.01 {
-            Quat::IDENTITY
-        } else if (axis + default_axis).length() < 0.01 {
-            Quat::from_rotation_x(PI)
-        } else {
-            Quat::from_rotation_arc(default_axis, axis)
-        };
-
-        // Spawn joint as child of parent link
-        let joint_entity = commands.spawn((
-            JointNode {
-                name: joint_info.name.clone(),
-                axis,  // Store axis for animation
-            },
-            Mesh3d(joint_mesh.clone()),
-            MeshMaterial3d(joint_material.clone()),
-            Transform::from_translation(origin_pos + Vec3::Y * 0.6)  // Offset up along link
-                .with_rotation(origin_rot * axis_rotation),
-            Name::new(format!("joint:{}", joint_info.name)),
-        )).id();
-
-        commands.entity(parent_entity).add_child(joint_entity);
-
-        // Spawn child link as child of joint
-        if let Some(child_info) = scene.links.iter().find(|l| l.name == joint_info.child) {
-            let child_entity = commands.spawn((
-                LinkNode,
-                Mesh3d(link_mesh.clone()),
-                MeshMaterial3d(link_material.clone()),
-                Transform::from_xyz(0.0, 0.4, 0.0),  // Offset from joint
-                Name::new(format!("link:{}", child_info.name)),
-            )).id();
-
-            commands.entity(joint_entity).add_child(child_entity);
-            link_entities.insert(child_info.name.clone(), child_entity);
-        }
-    }
+    crate::visualization::spawn_robot_from_urdf(commands, scene, meshes, materials);
 }
 
 fn sync_joint_transforms(
