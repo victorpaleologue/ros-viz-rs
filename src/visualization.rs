@@ -290,11 +290,16 @@ pub fn create_urdf_view_app(
 ) -> App {
     let mut app = App::new();
 
+    // For snapshot mode, create an invisible window
+    // For interactive mode, create a visible window
+    let is_snapshot = snapshot_output.is_some();
+    
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
             title: window_title,
             resolution: (800.0, 600.0).into(),
-            visible: snapshot_output.is_none(), // Show window in interactive mode, hide for snapshot
+            visible: !is_snapshot, // Hide window for snapshots
+            decorations: !is_snapshot, // No decorations for snapshots
             ..default()
         }),
         ..default()
