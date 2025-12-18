@@ -2,8 +2,13 @@ use crate::config::AppConfig;
 
 #[cfg(feature = "ros")]
 use ros2_client::{
-    builtin_interfaces::Time, Context, Message, MessageTypeName, Name, Node, NodeName, NodeOptions,
-    Subscription, DEFAULT_SUBSCRIPTION_QOS,
+    builtin_interfaces::Time,
+    ros2::{
+        policy::{Durability, History, Reliability},
+        Duration as RosDuration, QosPolicyBuilder,
+    },
+    Context, Message, MessageTypeName, Name, Node, NodeName, NodeOptions, Subscription,
+    DEFAULT_SUBSCRIPTION_QOS,
 };
 #[cfg(feature = "ros")]
 use serde::{Deserialize, Serialize};
@@ -91,10 +96,20 @@ pub fn connect(config: &RosConfig) -> anyhow::Result<RosHandle> {
     )?;
     let mut node = ctx.new_node(node_name, NodeOptions::new())?;
 
+    // Use TransientLocal QoS for robot_description to receive latched messages
+    // (messages published before we subscribed)
+    let robot_description_qos = QosPolicyBuilder::new()
+        .durability(Durability::TransientLocal)
+        .history(History::KeepLast { depth: 1 })
+        .reliability(Reliability::Reliable {
+            max_blocking_time: RosDuration::from_secs(1),
+        })
+        .build();
+
     let robot_description_topic = node.create_topic(
         &Name::new("/", "robot_description")?,
         MessageTypeName::new("std_msgs", "String"),
-        &DEFAULT_SUBSCRIPTION_QOS,
+        &robot_description_qos,
     )?;
 
     let joint_states_topic = node.create_topic(
