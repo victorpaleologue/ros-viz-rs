@@ -1,0 +1,49 @@
+<?xml version="1.0"?>
+<robot name="two_link_planar">
+  <!-- Base -->
+  <link name="base">
+    <visual>
+      <geometry>
+        <box size="0.1 0.1 0.1"/>
+      </geometry>
+    </visual>
+  </link>
+
+  <!-- Link 1 -->
+  <link name="link1">
+    <visual>
+      <origin xyz="0.5 0 0"/>
+      <geometry>
+        <box size="1.0 0.1 0.1"/>
+      </geometry>
+    </visual>
+  </link>
+
+  <!-- Link 2 -->
+  <link name="link2">
+    <visual>
+      <origin xyz="0.4 0 0"/>
+      <geometry>
+        <box size="0.8 0.1 0.1"/>
+      </geometry>
+    </visual>
+  </link>
+
+  <!-- Joint 1: base to link1 (Z-axis rotation) -->
+  <joint name="joint1" type="revolute">
+    <parent link="base"/>
+    <child link="link1"/>
+    <origin xyz="0 0 0.05"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.14" upper="3.14" effort="100" velocity="1"/>
+  </joint>
+
+  <!-- Joint 2: link1 to link2 (Z-axis rotation) -->
+  <joint name="joint2" type="revolute">
+    <parent link="link1"/>
+    <child link="link2"/>
+    <origin xyz="1.0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.14" upper="3.14" effort="100" velocity="1"/>
+  </joint>
+</robot>

@@ -1,6 +1,33 @@
 # AGENT NOTES
 
-Expectations from the user:
+## Architecture Principles
+
+**Core Visualization Module**: The 3D visualization logic (URDF parsing, scene building, joint transforms) must be in a reusable module, NOT coupled to any specific application. Multiple tools should be able to use the same core:
+
+- ROS2 client app (subscribes to /robot_description and /joint_states)
+- URDF test tool (loads URDF files from disk, exports images)
+- Future tools (motion planning, trajectory visualization, etc.)
+
+**Image Export Strategy**:
+
+- Image exports should use temporary files (`std::env::temp_dir()`)
+- If temp access fails, use a dedicated hidden folder (`.test_outputs/`) that is git-ignored
+- Never commit test output images to the repository
+
+**Application Structure**:
+
+```text
+src/
+  lib.rs          - Core visualization module (public API)
+  urdf/           - URDF parsing
+  visualization/  - Bevy systems for 3D rendering and joint updates
+  app/            - ROS2 client application (one of many possible apps)
+examples/
+  test_urdf.rs    - Standalone URDF testing tool
+  test_robot_description.rs - ROS topic tester
+```
+
+## Expectations from the user
 
 - Maintain CURRENT_PLAN.md with actionable next steps and progress tracking; update as work evolves.
 - Commit regularly at milestones where a measurable result is achieved and covered by a test (preferably `cargo test`).

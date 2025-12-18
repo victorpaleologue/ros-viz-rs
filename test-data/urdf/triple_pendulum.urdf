@@ -1,0 +1,62 @@
+<?xml version="1.0"?>
+<robot name="triple_pendulum">
+  <!-- Base -->
+  <link name="world"/>
+
+  <!-- Pendulum link 1 -->
+  <link name="pendulum1">
+    <visual>
+      <origin xyz="0 0 -0.25"/>
+      <geometry>
+        <cylinder radius="0.03" length="0.5"/>
+      </geometry>
+    </visual>
+  </link>
+
+  <!-- Pendulum link 2 -->
+  <link name="pendulum2">
+    <visual>
+      <origin xyz="0 0 -0.2"/>
+      <geometry>
+        <cylinder radius="0.025" length="0.4"/>
+      </geometry>
+    </visual>
+  </link>
+
+  <!-- Pendulum link 3 -->
+  <link name="pendulum3">
+    <visual>
+      <origin xyz="0 0 -0.15"/>
+      <geometry>
+        <cylinder radius="0.02" length="0.3"/>
+      </geometry>
+    </visual>
+  </link>
+
+  <!-- Joint 1 (world to pendulum1, Y-axis rotation) -->
+  <joint name="joint1" type="revolute">
+    <parent link="world"/>
+    <child link="pendulum1"/>
+    <origin xyz="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-3.14" upper="3.14" effort="10" velocity="5"/>
+  </joint>
+
+  <!-- Joint 2 (pendulum1 to pendulum2, Y-axis rotation) -->
+  <joint name="joint2" type="revolute">
+    <parent link="pendulum1"/>
+    <child link="pendulum2"/>
+    <origin xyz="0 0 -0.5"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-3.14" upper="3.14" effort="10" velocity="5"/>
+  </joint>
+
+  <!-- Joint 3 (pendulum2 to pendulum3, Y-axis rotation) -->
+  <joint name="joint3" type="revolute">
+    <parent link="pendulum2"/>
+    <child link="pendulum3"/>
+    <origin xyz="0 0 -0.4"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-3.14" upper="3.14" effort="10" velocity="5"/>
+  </joint>
+</robot>
