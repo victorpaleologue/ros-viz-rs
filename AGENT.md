@@ -48,6 +48,7 @@ Behavior guardrails:
 - Favor tests that can run with `cargo test`; avoid flaky or environment-heavy steps when possible.
 - Keep ASCII unless non-ASCII is justified by existing file content.
 - Unless you stumble on a problem, go on with the plan automatically. Do not stop at every step.
+- Produce Markdown that is valid according to the `markdownlint` VSCode extension (proper list formatting, blank lines around lists, no trailing spaces, etc.).
 
 Pitfalls to watch for:
 
