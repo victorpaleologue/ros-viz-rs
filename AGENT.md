@@ -12,8 +12,9 @@
 
 - Tools should require explicit output paths for image exports
 - If output path is omitted, default to current working directory with descriptive filename
-- Never auto-export to hidden or temporary directories without user knowledge
-- Never commit test output images to the repository (add `*.png` to `.gitignore` as needed)
+- Do not auto-export to other directories.
+- When you run these tools, provide output path in a temporary directory, or a hidden one that is ignored by git.
+- Do not commit test output images to the repository, unless they are part of a documented test case with expected results.
 
 **Application Structure**:
 

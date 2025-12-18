@@ -28,6 +28,10 @@ Refactor code architecture to separate reusable visualization core from applicat
 - [x] Created test URDF samples: simple_arm, two_link_planar, triple_pendulum
 - [x] Built test_urdf.rs example tool for URDF visualization testing
 - [x] Successfully tested all 3 URDF samples with image export
+- [x] Created visual regression test infrastructure with ImageMagick integration
+- [x] Generated reference images for all URDF samples
+- [x] Automated integration tests verify rendering consistency (0% diff)
+- [x] Made image output paths explicit and user-controlled
 
 ## Next up (Architecture Refactoring)
 
@@ -37,8 +41,8 @@ Refactor code architecture to separate reusable visualization core from applicat
 - [ ] Ensure core module has no ROS dependencies (pure URDF + Bevy)
 - [ ] Update test_urdf.rs to use refactored core module
 - [ ] Verify both ROS client app and test tool work with new architecture
-- [ ] Visual review of exported test images against URDF samples
 - [ ] Add command-line options to test_urdf for joint positions
+- [ ] Add coordinate axes and ground plane to visualization for better orientation
 
 ## Upcoming milestones
 
@@ -48,8 +52,8 @@ Refactor code architecture to separate reusable visualization core from applicat
 - Milestone 3: ✓ Live 3D visualization with animated geometry and ROS connection
 - Milestone 4: ✓ Proper URDF kinematic tree with accurate joint/link transforms
 - Milestone 5: ✓ External ROS device integration with proper QoS settings
-- Milestone 6 (current): Architecture refactoring - separate core visualization from applications
-- Milestone 7: Offscreen rendering and automated visual comparison tests
+- Milestone 6: ✓ Visual regression test infrastructure with automated verification
+- Milestone 7 (current): Architecture refactoring - separate core visualization from applications
 - Milestone 8: Interactive joint manipulation and bidirectional ROS communication
 
 ## Notes
