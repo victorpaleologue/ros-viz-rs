@@ -1,6 +1,8 @@
 use crate::urdf::UrdfScene;
 use bevy::prelude::*;
+use bevy::render::view::screenshot::{save_to_disk, Screenshot};
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 #[derive(Component)]
 pub struct LinkNode {
@@ -232,4 +234,95 @@ pub fn setup_camera(commands: &mut Commands) {
         Camera3d::default(),
         Transform::from_xyz(2.5, 2.5, 2.5).looking_at(Vec3::new(0.0, 0.5, 0.0), Vec3::Y),
     ));
+}
+
+/// Configuration for rendering a URDF to an image
+#[derive(Resource)]
+pub struct SnapshotConfig {
+    pub output_path: PathBuf,
+    pub frame_count: u32,
+    pub screenshot_requested: bool,
+}
+
+impl SnapshotConfig {
+    pub fn new(output_path: PathBuf) -> Self {
+        Self {
+            output_path,
+            frame_count: 0,
+            screenshot_requested: false,
+        }
+    }
+}
+
+/// System to capture a screenshot and exit after rendering stabilizes
+pub fn capture_and_exit_system(
+    mut commands: Commands,
+    mut config: ResMut<SnapshotConfig>,
+    mut app_exit: EventWriter<AppExit>,
+) {
+    config.frame_count += 1;
+
+    // Wait for rendering to stabilize
+    if config.frame_count < 10 {
+        return;
+    }
+
+    // Take screenshot on frame 10
+    if config.frame_count == 10 && !config.screenshot_requested {
+        let output_path = config.output_path.clone();
+        commands
+            .spawn(Screenshot::primary_window())
+            .observe(save_to_disk(output_path));
+        config.screenshot_requested = true;
+    }
+
+    // Exit after screenshot
+    if config.frame_count >= 15 && config.screenshot_requested {
+        app_exit.send(AppExit::Success);
+    }
+}
+
+/// Create a Bevy app configured to render a URDF scene and optionally export a snapshot
+pub fn create_urdf_view_app(
+    scene: UrdfScene,
+    window_title: String,
+    snapshot_output: Option<PathBuf>,
+) -> App {
+    let mut app = App::new();
+
+    app.add_plugins(DefaultPlugins.set(WindowPlugin {
+        primary_window: Some(Window {
+            title: window_title,
+            resolution: (800.0, 600.0).into(),
+            visible: snapshot_output.is_none(), // Show window in interactive mode, hide for snapshot
+            ..default()
+        }),
+        ..default()
+    }))
+    .insert_resource(ClearColor(Color::srgb(0.2, 0.2, 0.25)))
+    .insert_resource(UrdfViewScene { scene })
+    .add_systems(Startup, setup_urdf_view_scene);
+
+    if let Some(output_path) = snapshot_output {
+        app.insert_resource(SnapshotConfig::new(output_path))
+            .add_systems(Update, capture_and_exit_system);
+    }
+
+    app
+}
+
+#[derive(Resource)]
+struct UrdfViewScene {
+    scene: UrdfScene,
+}
+
+fn setup_urdf_view_scene(
+    mut commands: Commands,
+    scene: Res<UrdfViewScene>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    setup_camera(&mut commands);
+    setup_lighting(&mut commands);
+    spawn_robot_from_urdf(&mut commands, &scene.scene, &mut meshes, &mut materials);
 }

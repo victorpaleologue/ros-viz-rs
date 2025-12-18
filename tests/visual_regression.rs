@@ -113,14 +113,14 @@ fn visual_regression_tests() -> Result<()> {
 }
 
 fn render_urdf(urdf_path: &str, output_path: &Path) -> Result<RenderResult> {
+    // Use the urdf_snapshot helper binary which reuses the factorized visualization code
     let output = Command::new("cargo")
         .args(&[
             "run",
-            "--example",
-            "urdf_view",
+            "--bin",
+            "urdf_snapshot",
             "--",
             urdf_path,
-            "--export-snapshot",
             output_path.to_str().unwrap(),
         ])
         .output()?;
