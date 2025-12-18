@@ -25,6 +25,11 @@ const VISUAL_TESTS: &[VisualTest] = &[
         urdf_path: "test-data/urdf/triple_pendulum.urdf",
         reference_image: "test-data/reference/triple_pendulum.png",
     },
+    VisualTest {
+        name: "nao_robot",
+        urdf_path: "test-data/urdf/nao_robot.urdf",
+        reference_image: "test-data/reference/nao_robot.png",
+    },
 ];
 
 /// Maximum acceptable difference (0.0 = identical, 1.0 = completely different)

@@ -5,9 +5,19 @@ use ros2_client::ros2::{
 };
 use ros2_client::{Context, MessageTypeName, Name, NodeName, NodeOptions};
 use std::env;
+use std::fs;
+use std::path::PathBuf;
 use std::time::Duration;
 
 fn main() -> Result<()> {
+    // Get output path from args or use default
+    let args: Vec<String> = env::args().collect();
+    let output_path = if args.len() > 1 {
+        PathBuf::from(&args[1])
+    } else {
+        PathBuf::from("test-data/urdf/nao_robot.urdf")
+    };
+
     // Get domain ID from environment or default to 0
     let domain_id: u32 = env::var("ROS_DOMAIN_ID")
         .ok()
@@ -15,6 +25,7 @@ fn main() -> Result<()> {
         .unwrap_or(0);
 
     println!("Connecting to ROS2 domain {}", domain_id);
+    println!("Will save URDF to: {}", output_path.display());
 
     // Create ROS2 context and node
     let ctx = Context::new()?;
@@ -70,6 +81,13 @@ fn main() -> Result<()> {
                 // Check if it looks like valid XML
                 if msg.trim().starts_with("<?xml") || msg.trim().starts_with("<robot") {
                     println!("✓ Content looks like valid URDF XML");
+                    
+                    // Save to file
+                    if let Some(parent) = output_path.parent() {
+                        fs::create_dir_all(parent)?;
+                    }
+                    fs::write(&output_path, &msg)?;
+                    println!("✓ Saved URDF to: {}", output_path.display());
                 } else {
                     println!("⚠ Content doesn't look like XML");
                 }
