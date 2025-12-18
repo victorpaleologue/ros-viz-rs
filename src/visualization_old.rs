@@ -41,7 +41,7 @@ pub fn create_robot_materials(
     materials: &mut ResMut<Assets<StandardMaterial>>,
 ) -> (Handle<StandardMaterial>, Handle<StandardMaterial>) {
     let link_material = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.3, 0.5, 0.8),
+        base_color: Color::srgb(0.2, 0.6, 0.8),
         metallic: 0.3,
         perceptual_roughness: 0.5,
         ..default()
@@ -83,8 +83,7 @@ pub fn spawn_robot_from_urdf_with_geometry(
 ) {
     use std::f32::consts::PI;
 
-    // For now, spawn without k crate - just use the parent-child hierarchy from URDF
-    // TODO: Integrate k crate properly by parsing URDF XML directly to urdf_rs::Robot
+    let mut link_entities: HashMap<String, Entity> = HashMap::new();
 
     let (link_material, joint_material) = create_robot_materials(materials);
 
@@ -97,8 +96,6 @@ pub fn spawn_robot_from_urdf_with_geometry(
 
     // Create joint mesh - cylinder (default aligned with Y axis)
     let joint_mesh = meshes.add(Cylinder::new(geometry.joint_radius, geometry.joint_height));
-
-    let mut link_entities: HashMap<String, Entity> = HashMap::new();
 
     // Find root link (link with no parent joint)
     let child_links: std::collections::HashSet<_> =
@@ -115,9 +112,7 @@ pub fn spawn_robot_from_urdf_with_geometry(
     if let Some(root_info) = scene.links.iter().find(|l| l.name == root_link) {
         let entity = commands
             .spawn((
-                LinkNode {
-                    name: root_info.name.clone(),
-                },
+                LinkNode,
                 Mesh3d(link_mesh.clone()),
                 MeshMaterial3d(link_material.clone()),
                 Transform::from_xyz(0.0, 0.0, 0.0),
@@ -134,6 +129,7 @@ pub fn spawn_robot_from_urdf_with_geometry(
             Some(e) => *e,
             None => continue, // Skip if parent not found
         };
+
         // Calculate joint transform from URDF origin
         let origin_pos = Vec3::new(
             joint_info.origin_xyz[0] as f32,
@@ -170,7 +166,7 @@ pub fn spawn_robot_from_urdf_with_geometry(
             .spawn((
                 JointNode {
                     name: joint_info.name.clone(),
-                    axis,
+                    axis, // Store axis for animation
                 },
                 Mesh3d(joint_mesh.clone()),
                 MeshMaterial3d(joint_material.clone()),
@@ -185,9 +181,7 @@ pub fn spawn_robot_from_urdf_with_geometry(
         if let Some(child_info) = scene.links.iter().find(|l| l.name == joint_info.child) {
             let child_entity = commands
                 .spawn((
-                    LinkNode {
-                        name: child_info.name.clone(),
-                    },
+                    LinkNode,
                     Mesh3d(link_mesh.clone()),
                     MeshMaterial3d(link_material.clone()),
                     Transform::from_xyz(0.0, 0.0, 0.0), // At joint origin

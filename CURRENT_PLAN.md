@@ -4,9 +4,9 @@ Purpose: keep a living checklist for pausing/resuming work.
 
 ## Current objective
 
-Refactor code architecture to separate reusable visualization core from application-specific code.
+Complete skeleton visualization with proper kinematic chain rendering.
 
-## Completed (Milestone 4)
+## Completed (Milestone 5 - Skeleton Visualization)
 
 - [x] Enable render, ros, and urdf features by default for easy `cargo run`
 - [x] Switch from app.update() to app.run() so GUI stays open with continuous updates
@@ -24,24 +24,35 @@ Refactor code architecture to separate reusable visualization core from applicat
 - [x] Successfully receive and parse NAO robot URDF (83 links, 82 joints)
 - [x] Created standalone test_robot_description.rs example tool
 - [x] Cleaned git history of PNG test images
-- [x] Documented architecture principles in AGENT.md
-- [x] Created test URDF samples: simple_arm, two_link_planar, triple_pendulum
+- [x] Merged AGENT.md into AGENTS.md with comprehensive guidelines
+- [x] Documented principle: always favor updated libraries over downgrading
+- [x] Created test URDF samples: simple_arm, two_link_planar, triple_pendulum, box_bot
 - [x] Built test_urdf.rs example tool for URDF visualization testing
-- [x] Successfully tested all 3 URDF samples with image export
+- [x] Successfully tested all URDF samples with image export
 - [x] Created visual regression test infrastructure with ImageMagick integration
 - [x] Generated reference images for all URDF samples
 - [x] Automated integration tests verify rendering consistency (0% diff)
 - [x] Made image output paths explicit and user-controlled
+- [x] **Created src/visualization.rs module for reusable skeleton visualization**
+- [x] **Extracted shared geometry, materials, and spawn functions**
+- [x] **Refactored app, test_urdf, and tests to use visualization module**
+- [x] **Updated dependencies: urdf-rs 0.9, k 0.32 (latest versions)**
+- [x] **Fixed urdf-rs 0.9 API compatibility (Vec3 tuple struct access)**
+- [x] **All visual regression tests passing with new skeleton code**
+- [x] **NAO robot (83 links) successfully renders**
 
-## Next up (Architecture Refactoring)
+## Next up (Forward Kinematics Integration)
 
-- [ ] Create src/lib.rs with public API for visualization core
-- [ ] Extract URDF parsing, scene building, and joint updates into src/visualization/ module
-- [ ] Refactor src/app/mod.rs to consume the core visualization module
-- [ ] Ensure core module has no ROS dependencies (pure URDF + Bevy)
-- [ ] Update test_urdf.rs to use refactored core module
-- [ ] Verify both ROS client app and test tool work with new architecture
-- [ ] Add command-line options to test_urdf for joint positions
+- [ ] Integrate k crate properly for forward kinematics
+  - [ ] Parse URDF XML directly to urdf_rs::Robot (not through UrdfScene)
+  - [ ] Build k::Chain from urdf_rs::Robot
+  - [ ] Use k::urdf::link_to_joint_map for proper mapping
+  - [ ] Compute world transforms with chain.update_transforms()
+  - [ ] Convert nalgebra Isometry3 to Bevy Transform
+- [ ] Handle joint state updates from /joint_states topic
+  - [ ] Update k::Chain joint positions from ROS messages
+  - [ ] Recompute transforms and update Bevy entities
+- [ ] Fix broken unit tests (app::tests need updating for new architecture)
 - [ ] Add coordinate axes and ground plane to visualization for better orientation
 
 ## Upcoming milestones

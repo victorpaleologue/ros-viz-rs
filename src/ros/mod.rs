@@ -175,6 +175,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(not(feature = "ros"))]
     fn stub_connect_errors_without_feature() {
         let cfg = RosConfig::from_app(&AppConfig::new(0));
         let err = connect(&cfg).unwrap_err();

@@ -56,6 +56,7 @@ pub fn parse_urdf(xml: &str) -> anyhow::Result<UrdfScene> {
         .joints
         .iter()
         .map(|j| {
+            // urdf-rs 0.9 uses Vec3 type, which is a tuple struct [f64; 3]
             let origin_xyz = j.origin.xyz.0;
             let origin_rpy = j.origin.rpy.0;
             let axis = j.axis.xyz.0;
@@ -92,9 +93,19 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(not(feature = "urdf"))]
     fn stub_parse_returns_error() {
         let err = parse_urdf("<robot></robot>").unwrap_err();
         assert!(err.to_string().contains("URDF") || err.to_string().contains("urdf"));
+    }
+
+    #[test]
+    #[cfg(feature = "urdf")]
+    fn empty_robot_parses() {
+        // urdf-rs 0.9 successfully parses empty robot tags
+        let scene = parse_urdf("<robot name='test'></robot>").expect("parses");
+        assert_eq!(scene.joint_count(), 0);
+        assert_eq!(scene.link_count(), 0);
     }
 
     #[test]

@@ -81,7 +81,7 @@ fn main() -> Result<()> {
                 // Check if it looks like valid XML
                 if msg.trim().starts_with("<?xml") || msg.trim().starts_with("<robot") {
                     println!("✓ Content looks like valid URDF XML");
-                    
+
                     // Save to file
                     if let Some(parent) = output_path.parent() {
                         fs::create_dir_all(parent)?;
