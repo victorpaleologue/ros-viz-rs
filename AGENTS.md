@@ -43,7 +43,7 @@ src/
   visualization/  - Bevy systems for 3D rendering and joint updates
   app/            - ROS2 client application (one of many possible apps)
 examples/
-  urdf_view_snapshot.rs - Standalone URDF testing tool
+  urdf_view.rs      - Standalone URDF viewer and snapshot tool
   test_robot_description.rs - ROS topic tester
 ```
 
@@ -85,7 +85,7 @@ examples/
 
 - `src/visualization.rs`: Shared robot visualization code (geometry, materials, spawning)
 - `src/app/mod.rs`: Main ROS2 application
-- `examples/urdf_view_snapshot.rs`: Standalone URDF testing tool
+- `examples/urdf_view.rs`: Standalone URDF viewer and snapshot tool
 - `tests/visual_regression.rs`: Automated visual testing with ImageMagick
 
 ## Corrections and Adjustments

@@ -34,7 +34,7 @@ Expected visualization: Three cylinders hanging vertically, each can swing like 
 Run the URDF test tool:
 
 ```bash
-cargo run --example urdf_view_snapshot test-data/urdf/simple_arm.urdf simple_arm.png
+cargo run --example urdf_view test-data/urdf/simple_arm.urdf --export-snapshot simple_arm.png
 ```
 
 This will parse the URDF, render it, and export an image to the specified path for visual inspection.

@@ -26,13 +26,13 @@ By default, connects to ROS domain 0. Override with `--domain <id>` or `ROS_DOMA
 Test URDF parsing and visualization without ROS:
 
 ```bash
-# Test with provided samples
-cargo run --example urdf_view_snapshot test-data/urdf/simple_arm.urdf
-cargo run --example urdf_view_snapshot test-data/urdf/two_link_planar.urdf
-cargo run --example urdf_view_snapshot test-data/urdf/triple_pendulum.urdf
+# View URDF interactively
+cargo run --example urdf_view test-data/urdf/simple_arm.urdf
+cargo run --example urdf_view test-data/urdf/two_link_planar.urdf
+cargo run --example urdf_view test-data/urdf/triple_pendulum.urdf
 
-# Test with your own URDF
-cargo run --example urdf_view_snapshot path/to/your/robot.urdf
+# Export snapshot to PNG
+cargo run --example urdf_view test-data/urdf/simple_arm.urdf --export-snapshot output.png
 ```
 
 Images are exported to your system temp directory for visual inspection. See [examples/README.md](examples/README.md) for details.

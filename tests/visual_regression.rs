@@ -117,9 +117,10 @@ fn render_urdf(urdf_path: &str, output_path: &Path) -> Result<RenderResult> {
         .args(&[
             "run",
             "--example",
-            "urdf_view_snapshot",
+            "urdf_view",
             "--",
             urdf_path,
+            "--export-snapshot",
             output_path.to_str().unwrap(),
         ])
         .output()?;

@@ -5,7 +5,7 @@ Test URDF parsing and visualization by loading URDF files from disk and exportin
 ## Usage
 
 ```bash
-cargo run --example urdf_view_snapshot <urdf_file> [output_image]
+cargo run --example urdf_view <urdf_file> [--export-snapshot <output_image>]
 ```
 
 If `output_image` is omitted, saves to `<urdf_name>.png` in the current directory.
