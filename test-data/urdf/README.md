@@ -32,8 +32,11 @@ Expected visualization: Three cylinders hanging vertically, each can swing like 
 ## Testing
 
 Run the URDF test tool:
+
 ```bash
-cargo run --example test_urdf test-data/urdf/simple_arm.urdf
+cargo run --example test_urdf test-data/urdf/simple_arm.urdf simple_arm.png
 ```
 
-This will parse the URDF, render it, and export an image for visual inspection.
+This will parse the URDF, render it, and export an image to the specified path for visual inspection.
+
+If you omit the output path, it defaults to `<urdf_name>.png` in the current directory.

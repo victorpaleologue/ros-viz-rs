@@ -12,26 +12,40 @@ use std::path::{Path, PathBuf};
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        eprintln!("Usage: {} <urdf_file>", args[0]);
-        eprintln!("Example: cargo run --example test_urdf test-data/urdf/simple_arm.urdf");
+        eprintln!("Usage: {} <urdf_file> [output_image]", args[0]);
+        eprintln!("Example: cargo run --example test_urdf test-data/urdf/simple_arm.urdf simple_arm.png");
+        eprintln!("If output_image is omitted, saves to <urdf_name>.png in current directory");
         std::process::exit(1);
     }
 
     let urdf_path = &args[1];
     let urdf_xml = fs::read_to_string(urdf_path)?;
-    
+
     println!("Loading URDF from: {}", urdf_path);
     let scene = parse_urdf(&urdf_xml)?;
-    println!("✓ Parsed URDF: {} links, {} joints", scene.links.len(), scene.joints.len());
+    println!(
+        "✓ Parsed URDF: {} links, {} joints",
+        scene.links.len(),
+        scene.joints.len()
+    );
 
-    // Create output path
-    let output_path = get_output_path(urdf_path);
+    // Determine output path
+    let output_path = if args.len() >= 3 {
+        PathBuf::from(&args[2])
+    } else {
+        // Default to current directory with URDF name
+        let stem = Path::new(urdf_path).file_stem().unwrap().to_string_lossy();
+        PathBuf::from(format!("{}.png", stem))
+    };
     println!("Will export to: {}", output_path.display());
 
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: format!("URDF Test: {}", Path::new(urdf_path).file_name().unwrap().to_string_lossy()),
+                title: format!(
+                    "URDF Test: {}",
+                    Path::new(urdf_path).file_name().unwrap().to_string_lossy()
+                ),
                 resolution: (800.0, 600.0).into(),
                 ..default()
             }),
@@ -165,7 +179,7 @@ fn spawn_robot_from_urdf(
     // Spawn all links
     for link in &scene.links {
         let mesh = meshes.add(Cuboid::new(0.1, 0.1, 0.1));
-        
+
         let entity = commands
             .spawn((
                 Mesh3d(mesh),
@@ -246,7 +260,11 @@ fn spawn_robot_from_urdf(
         }
     }
 
-    println!("✓ Spawned {} links and {} joints", scene.links.len(), scene.joints.len());
+    println!(
+        "✓ Spawned {} links and {} joints",
+        scene.links.len(),
+        scene.joints.len()
+    );
 }
 
 fn capture_and_exit(
@@ -292,21 +310,4 @@ fn save_image(path: &Path, image: &Image) -> Result<()> {
 
     dynamic_image.save(path)?;
     Ok(())
-}
-
-fn get_output_path(urdf_path: &str) -> PathBuf {
-    let stem = Path::new(urdf_path)
-        .file_stem()
-        .unwrap()
-        .to_string_lossy();
-
-    // Try temp directory first
-    if let Ok(temp_dir) = env::temp_dir().canonicalize() {
-        return temp_dir.join(format!("{}_test.png", stem));
-    }
-
-    // Fallback to .test_outputs/
-    let output_dir = PathBuf::from(".test_outputs");
-    fs::create_dir_all(&output_dir).ok();
-    output_dir.join(format!("{}_test.png", stem))
 }

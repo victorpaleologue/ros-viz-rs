@@ -8,7 +8,6 @@ ROS2 robot visualizer powered by Bevy. It subscribes to `/robot_description` to 
 - ✅ 3D visualization with Bevy (proper joint hierarchy and transforms)
 - ✅ ROS2 subscriber client (connects to `/robot_description` and `/joint_states`)
 - ✅ Standalone URDF testing tool with image export
-- 🔮 Bidirectional ROS communication
 
 ## Quick Start
 

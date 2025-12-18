@@ -10,9 +10,10 @@
 
 **Image Export Strategy**:
 
-- Image exports should use temporary files (`std::env::temp_dir()`)
-- If temp access fails, use a dedicated hidden folder (`.test_outputs/`) that is git-ignored
-- Never commit test output images to the repository
+- Tools should require explicit output paths for image exports
+- If output path is omitted, default to current working directory with descriptive filename
+- Never auto-export to hidden or temporary directories without user knowledge
+- Never commit test output images to the repository (add `*.png` to `.gitignore` as needed)
 
 **Application Structure**:
 

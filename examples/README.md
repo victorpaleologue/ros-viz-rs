@@ -5,22 +5,25 @@ Test URDF parsing and visualization by loading URDF files from disk and exportin
 ## Usage
 
 ```bash
-cargo run --example test_urdf <path-to-urdf-file>
+cargo run --example test_urdf <urdf_file> [output_image]
 ```
+
+If `output_image` is omitted, saves to `<urdf_name>.png` in the current directory.
 
 ## Examples
 
 Test with the provided sample URDFs:
 
 ```bash
-# Simple 3-DOF arm
+# Default output (simple_arm.png in current directory)
 cargo run --example test_urdf test-data/urdf/simple_arm.urdf
 
-# Two-link planar arm
-cargo run --example test_urdf test-data/urdf/two_link_planar.urdf
+# Explicit output path
+cargo run --example test_urdf test-data/urdf/simple_arm.urdf output/my_arm.png
 
-# Triple pendulum
-cargo run --example test_urdf test-data/urdf/triple_pendulum.urdf
+# Multiple tests
+cargo run --example test_urdf test-data/urdf/two_link_planar.urdf two_link_planar.png
+cargo run --example test_urdf test-data/urdf/triple_pendulum.urdf triple_pendulum.png
 ```
 
 ## Output
@@ -29,9 +32,7 @@ The tool will:
 
 1. Parse the URDF file and extract kinematic data
 2. Render the robot model in 3D with proper joint hierarchy
-3. Export an image to:
-   - System temp directory (preferred): `/tmp/<name>_test.png` on Unix
-   - Fallback: `.test_outputs/<name>_test.png` (gitignored)
+3. Export an image to the specified path (or `<urdf_name>.png` in current directory)
 
 ## Visual Inspection
 
