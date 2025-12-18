@@ -1,18 +1,46 @@
 # ros-viz-rs
 
-ROS2 robot visualizer powered by Bevy. It subscribes to `/robot_description` to build a 3D model from URDF and listens to `/joint_states` to animate the robot in real time. A built-in emulator and image renderer will support automated testing.
+ROS2 robot visualizer powered by Bevy. It subscribes to `/robot_description` to build a 3D model from URDF and listens to `/joint_states` to animate the robot in real time.
 
-## Status
+## Features
 
-Early scaffolding. CLI parsing, docs, and CI are being set up; ROS2 + Bevy functionality is forthcoming.
+- ✅ URDF parsing with full kinematic tree extraction
+- ✅ 3D visualization with Bevy (proper joint hierarchy and transforms)
+- ✅ ROS2 subscriber client (connects to `/robot_description` and `/joint_states`)
+- ✅ Standalone URDF testing tool with image export
+- 🔮 Bidirectional ROS communication
 
-## Running (planned)
+## Quick Start
 
-- Prereqs: Rust stable (cargo), ROS2 runtime for real robots; Bevy runs with wgpu (Vulkan/Metal/DirectX)
-- CLI (planned): `cargo run -- --domain <id>` or set `ROS_DOMAIN_ID`. Defaults to env when flag is absent.
-- Rendering flags: `--headless` for offscreen, `--output-image <path>` to save a frame, `--width/--height` for resolution.
-- Features: a `ros` feature will enable ROS2 networking; tests/emulator will work without a live ROS graph.
-- URDF parsing is behind the `urdf` feature (uses urdf-rs/k/nalgebra/mesh-loader); without it, parsing stubs error out to keep CI lightweight.
+### ROS2 Visualization
+
+Connect to a running ROS2 robot:
+
+```bash
+cargo run
+```
+
+By default, connects to ROS domain 0. Override with `--domain <id>` or `ROS_DOMAIN_ID` environment variable.
+
+### URDF Testing
+
+Test URDF parsing and visualization without ROS:
+
+```bash
+# Test with provided samples
+cargo run --example test_urdf test-data/urdf/simple_arm.urdf
+cargo run --example test_urdf test-data/urdf/two_link_planar.urdf
+cargo run --example test_urdf test-data/urdf/triple_pendulum.urdf
+
+# Test with your own URDF
+cargo run --example test_urdf path/to/your/robot.urdf
+```
+
+Images are exported to your system temp directory for visual inspection. See [examples/README.md](examples/README.md) for details.
+
+## Test Data
+
+Sample URDF files for testing are in [test-data/urdf/](test-data/urdf/). See that directory's README for descriptions of each sample and expected visualizations.
 
 ## Development workflow
 
@@ -26,9 +54,24 @@ Early scaffolding. CLI parsing, docs, and CI are being set up; ROS2 + Bevy funct
 - Active plan: CURRENT_PLAN.md
 - Wiki-style docs live under docs/wiki (contributing, code organization, design decisions).
 
-## Roadmap (abridged)
+## Architecture
 
-- Milestone 0: scaffolding + CLI + CI green
-- Milestone 1: ROS2 domain-configurable connection layer with emulator harness
-- Milestone 2: URDF ingestion + Bevy scene build with sample assets
-- Milestone 3: Joint animation + image capture tooling and tests
+The project is being refactored to separate concerns:
+
+- **Core visualization module** (`src/visualization/`): Reusable URDF parsing, 3D scene building, and joint transforms (no ROS dependencies)
+- **Applications**: ROS2 client, URDF test tool, future planning tools
+- **Examples**: Standalone tools demonstrating specific functionality
+
+See [AGENT.md](AGENT.md) for detailed architecture principles and [CURRENT_PLAN.md](CURRENT_PLAN.md) for current development status.
+
+## Roadmap
+
+- ✅ Milestone 0: Scaffolding + CLI + CI green
+- ✅ Milestone 1: ROS2 connection layer with domain configuration
+- ✅ Milestone 2: URDF ingestion with full kinematic data extraction
+- ✅ Milestone 3: Live 3D visualization with proper joint hierarchy
+- ✅ Milestone 4: Accurate kinematic tree with URDF transforms
+- ✅ Milestone 5: External ROS device integration (proper QoS, latched topics)
+- ⏳ Milestone 6: Architecture refactoring (core visualization module)
+- 🔮 Milestone 7: Automated visual comparison tests
+- 🔮 Milestone 8: Interactive joint manipulation and bidirectional ROS
