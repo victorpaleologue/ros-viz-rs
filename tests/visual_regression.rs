@@ -13,17 +13,17 @@ const VISUAL_TESTS: &[VisualTest] = &[
     VisualTest {
         name: "simple_arm",
         urdf_path: "test-data/urdf/simple_arm.urdf",
-        reference_image: "assets/tests/reference/simple_arm.png",
+        reference_image: "test-data/reference/simple_arm.png",
     },
     VisualTest {
         name: "two_link_planar",
         urdf_path: "test-data/urdf/two_link_planar.urdf",
-        reference_image: "assets/tests/reference/two_link_planar.png",
+        reference_image: "test-data/reference/two_link_planar.png",
     },
     VisualTest {
         name: "triple_pendulum",
         urdf_path: "test-data/urdf/triple_pendulum.urdf",
-        reference_image: "assets/tests/reference/triple_pendulum.png",
+        reference_image: "test-data/reference/triple_pendulum.png",
     },
 ];
 
