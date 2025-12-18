@@ -27,7 +27,7 @@ Complete skeleton visualization with proper kinematic chain rendering.
 - [x] Merged AGENT.md into AGENTS.md with comprehensive guidelines
 - [x] Documented principle: always favor updated libraries over downgrading
 - [x] Created test URDF samples: simple_arm, two_link_planar, triple_pendulum, box_bot
-- [x] Built test_urdf.rs example tool for URDF visualization testing
+- [x] Built urdf_view_snapshot.rs example tool for URDF visualization testing
 - [x] Successfully tested all URDF samples with image export
 - [x] Created visual regression test infrastructure with ImageMagick integration
 - [x] Generated reference images for all URDF samples
@@ -35,7 +35,7 @@ Complete skeleton visualization with proper kinematic chain rendering.
 - [x] Made image output paths explicit and user-controlled
 - [x] **Created src/visualization.rs module for reusable skeleton visualization**
 - [x] **Extracted shared geometry, materials, and spawn functions**
-- [x] **Refactored app, test_urdf, and tests to use visualization module**
+- [x] **Refactored app, urdf_view_snapshot, and tests to use visualization module**
 - [x] **Updated dependencies: urdf-rs 0.9, k 0.32 (latest versions)**
 - [x] **Fixed urdf-rs 0.9 API compatibility (Vec3 tuple struct access)**
 - [x] **All visual regression tests passing with new skeleton code**

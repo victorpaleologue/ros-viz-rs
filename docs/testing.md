@@ -83,9 +83,9 @@ The diff image shows pixel-by-pixel differences in red.
 When intentionally changing rendering (camera, lighting, geometry, etc.), regenerate references:
 
 ```bash
-cargo run --example test_urdf test-data/urdf/simple_arm.urdf test-data/reference/simple_arm.png
-cargo run --example test_urdf test-data/urdf/two_link_planar.urdf test-data/reference/two_link_planar.png
-cargo run --example test_urdf test-data/urdf/triple_pendulum.urdf test-data/reference/triple_pendulum.png
+cargo run --example urdf_view_snapshot test-data/urdf/simple_arm.urdf test-data/reference/simple_arm.png
+cargo run --example urdf_view_snapshot test-data/urdf/two_link_planar.urdf test-data/reference/two_link_planar.png
+cargo run --example urdf_view_snapshot test-data/urdf/triple_pendulum.urdf test-data/reference/triple_pendulum.png
 ```
 
 **Important**: Visually inspect the new images before committing! Reference images define "correct" output.
@@ -96,7 +96,7 @@ cargo run --example test_urdf test-data/urdf/triple_pendulum.urdf test-data/refe
 2. Generate reference image:
 
    ```bash
-   cargo run --example test_urdf test-data/urdf/your_robot.urdf test-data/reference/your_robot.png
+   cargo run --example urdf_view_snapshot test-data/urdf/your_robot.urdf test-data/reference/your_robot.png
    ```
 
 3. Add test entry to `VISUAL_TESTS` array in `tests/visual_regression.rs`:
@@ -158,10 +158,10 @@ test-data/
   urdf/                     - URDF test samples
   reference/                - Reference images (committed)
 tests/visual_regression.rs  - Integration test harness
-examples/test_urdf.rs       - Rendering tool (deterministic output)
+examples/urdf_view_snapshot.rs - Rendering tool (deterministic output)
 ```
 
-Tests run the `test_urdf` example, ensuring integration of:
+Tests run the `urdf_view_snapshot` example, ensuring integration of:
 
 - URDF parsing (`src/urdf/`)
 - Scene construction (entity hierarchy)

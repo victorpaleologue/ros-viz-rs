@@ -12,7 +12,7 @@ fn main() -> Result<()> {
     if args.len() < 2 {
         eprintln!("Usage: {} <urdf_file> [output_image]", args[0]);
         eprintln!(
-            "Example: cargo run --example test_urdf test-data/urdf/simple_arm.urdf simple_arm.png"
+            "Example: cargo run --example urdf_view_snapshot test-data/urdf/simple_arm.urdf simple_arm.png"
         );
         eprintln!("If output_image is omitted, saves to <urdf_name>.png in current directory");
         std::process::exit(1);

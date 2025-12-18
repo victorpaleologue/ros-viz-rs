@@ -27,12 +27,12 @@ Test URDF parsing and visualization without ROS:
 
 ```bash
 # Test with provided samples
-cargo run --example test_urdf test-data/urdf/simple_arm.urdf
-cargo run --example test_urdf test-data/urdf/two_link_planar.urdf
-cargo run --example test_urdf test-data/urdf/triple_pendulum.urdf
+cargo run --example urdf_view_snapshot test-data/urdf/simple_arm.urdf
+cargo run --example urdf_view_snapshot test-data/urdf/two_link_planar.urdf
+cargo run --example urdf_view_snapshot test-data/urdf/triple_pendulum.urdf
 
 # Test with your own URDF
-cargo run --example test_urdf path/to/your/robot.urdf
+cargo run --example urdf_view_snapshot path/to/your/robot.urdf
 ```
 
 Images are exported to your system temp directory for visual inspection. See [examples/README.md](examples/README.md) for details.
