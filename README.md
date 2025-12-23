@@ -21,6 +21,16 @@ cargo run
 
 By default, connects to ROS domain 0. Override with `--domain <id>` or `ROS_DOMAIN_ID` environment variable.
 
+### Retrieve a robot's URDF
+
+This connects to the current `ROS_DOMAIN_ID`, to read `/robot_description` and save it to the path `my_robot.urdf`.
+
+```bash
+cargo run --example get_robot_description -- my_robot.urdf
+```
+
+If you omit the destination file name, it will display the full URDF to stdout, mixed with few logs.
+
 ### URDF Testing
 
 Test URDF parsing and visualization without ROS:

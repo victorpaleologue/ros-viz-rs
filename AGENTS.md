@@ -44,7 +44,7 @@ src/
   app/            - ROS2 client application (one of many possible apps)
 examples/
   urdf_view.rs      - Standalone URDF viewer and snapshot tool
-  test_robot_description.rs - ROS topic tester
+  get_robot_description.rs - Get a ROS robot description from topic `/robot_description`. Useful for sanity check too.
 ```
 
 ## Expectations from the User
