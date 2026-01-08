@@ -1,4 +1,5 @@
-use crate::config::AppConfig;
+use crate::options::Options;
+
 #[cfg(feature = "ros")]
 use crate::ros::{self, RosConfig};
 use crate::urdf::{UrdfScene, parse_urdf};
@@ -51,16 +52,11 @@ use crate::visualization::{JointNode, LinkNode};
 
 /// Initialize tracing and launch the (future) Bevy-based app.
 /// Tracing setup mirrors https://docs.rs/tracing-subscriber/latest/tracing_subscriber/fmt/index.html
-pub fn run(config: AppConfig) -> anyhow::Result<()> {
+pub fn run(options: Options) -> anyhow::Result<()> {
     init_tracing();
-    tracing::info!(
-        domain_id = config.domain_id,
-        headless = config.headless,
-        output_image = ?config.output_image,
-        "Starting ros-viz-rs application"
-    );
+    tracing::info!("Starting ros-viz-rs application with options: {options:?}");
 
-    let mut app = build_app(&config);
+    let mut app = build_app(&options);
 
     // Always run the full loop to receive ROS messages
     app.run();
@@ -69,9 +65,9 @@ pub fn run(config: AppConfig) -> anyhow::Result<()> {
 
 /// Build a Bevy `App` configured for headless or windowed rendering.
 /// Rendering plugins are intentionally minimal for now to keep CI stable; full stacks will be added later.
-pub fn build_app(config: &AppConfig) -> App {
+pub fn build_app(options: &Options) -> App {
     let mut app = App::new();
-    app.insert_resource(config.clone());
+    app.insert_resource(options.clone());
 
     // Start with empty robot assets - will be populated from ROS /robot_description
     app.insert_resource(RobotAssets {
@@ -83,22 +79,19 @@ pub fn build_app(config: &AppConfig) -> App {
 
     #[cfg(feature = "ros")]
     {
-        if let Some(ros) = maybe_init_ros(config) {
+        if let Some(ros) = maybe_init_ros(options) {
             app.insert_resource(RosState { handle: ros });
         }
     }
 
-    if config.headless {
+    if options.snapshot_to.is_some() {
         app.add_plugins(MinimalPlugins);
     } else {
         #[cfg(feature = "render")]
         {
             let window_plugin = bevy::window::WindowPlugin {
                 primary_window: Some(bevy::window::Window {
-                    resolution: WindowResolution::new(
-                        config.render.width as f32,
-                        config.render.height as f32,
-                    ),
+                    resolution: WindowResolution::new(options.width as f32, options.height as f32),
                     present_mode: PresentMode::AutoNoVsync,
                     ..Default::default()
                 }),
@@ -124,7 +117,7 @@ pub fn build_app(config: &AppConfig) -> App {
     // Don't populate scene at startup - wait for ROS /robot_description
     // populate_urdf_scene needs Assets which are only available with DefaultPlugins (render mode)
     #[cfg(feature = "render")]
-    if !config.headless {
+    if options.snapshot_to.is_none() {
         app.add_systems(Update, check_and_spawn_robot);
     }
 
@@ -139,8 +132,8 @@ pub fn build_app(config: &AppConfig) -> App {
 }
 
 #[cfg(feature = "ros")]
-fn maybe_init_ros(config: &AppConfig) -> Option<ros::RosHandle> {
-    let cfg = RosConfig::from_app(config);
+fn maybe_init_ros(options: &Options) -> Option<ros::RosHandle> {
+    let cfg = RosConfig::new(options.domain);
     match ros::connect(&cfg) {
         Ok(handle) => Some(handle),
         Err(err) => {
@@ -312,10 +305,10 @@ mod tests {
 
     #[test]
     fn builds_headless_app() {
-        let mut cfg = AppConfig::new(0);
-        cfg.headless = true;
+        let mut cfg = Options::default();
+        cfg.snapshot_to = Some("dummy.png".into());
         let app = build_app(&cfg);
-        let stored = app.world().get_resource::<AppConfig>().cloned();
+        let stored = app.world().get_resource::<Options>().cloned();
         assert_eq!(stored, Some(cfg));
         assert!(app.world().contains_resource::<RobotAssets>());
         assert!(app.world().contains_resource::<JointPositions>());
@@ -323,9 +316,9 @@ mod tests {
 
     #[test]
     fn builds_windowed_app_placeholder() {
-        let cfg = AppConfig::new(0);
+        let cfg = Options::default();
         let app = build_app(&cfg);
-        let stored = app.world().get_resource::<AppConfig>().cloned();
+        let stored = app.world().get_resource::<Options>().cloned();
         assert_eq!(stored, Some(cfg));
         assert!(app.world().contains_resource::<RobotAssets>());
         assert!(app.world().contains_resource::<JointPositions>());
@@ -333,7 +326,7 @@ mod tests {
 
     #[test]
     fn startup_spawns_scene_entities() {
-        let cfg = AppConfig::new(0);
+        let cfg = Options::default();
         let mut app = build_app(&cfg);
         app.update();
 
@@ -379,8 +372,8 @@ mod tests {
         let dir = tempdir().expect("tempdir");
         let img_path = dir.path().join("out.png");
 
-        let mut cfg = AppConfig::new(0);
-        cfg.output_image = Some(img_path.clone());
+        let mut cfg = Options::default();
+        cfg.snapshot_to = Some(img_path.clone());
         run(cfg).expect("run succeeds");
 
         let meta = fs::metadata(&img_path).expect("image exists");

@@ -1,6 +1,6 @@
 use crate::urdf::UrdfScene;
 use bevy::prelude::*;
-use bevy::render::view::screenshot::{save_to_disk, Screenshot};
+use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -293,12 +293,12 @@ pub fn create_urdf_view_app(
     // For snapshot mode, create an invisible window
     // For interactive mode, create a visible window
     let is_snapshot = snapshot_output.is_some();
-    
+
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
             title: window_title,
             resolution: (800.0, 600.0).into(),
-            visible: !is_snapshot, // Hide window for snapshots
+            visible: !is_snapshot,     // Hide window for snapshots
             decorations: !is_snapshot, // No decorations for snapshots
             ..default()
         }),

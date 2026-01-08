@@ -1,5 +1,3 @@
-use crate::config::AppConfig;
-
 #[cfg(feature = "ros")]
 use ros2_client::{
     Context, DEFAULT_SUBSCRIPTION_QOS, Message, MessageTypeName, Name, Node, NodeName, NodeOptions,
@@ -27,9 +25,9 @@ pub struct RosConfig {
 }
 
 impl RosConfig {
-    pub fn from_app(app: &AppConfig) -> Self {
+    pub fn new(domain_id: u32) -> Self {
         Self {
-            domain_id: app.domain_id,
+            domain_id,
             node_name: "ros_viz_rs".to_string(),
             namespace: None,
         }
@@ -172,12 +170,10 @@ impl RosHandle {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     #[cfg(not(feature = "ros"))]
     fn stub_connect_errors_without_feature() {
-        let cfg = RosConfig::from_app(&AppConfig::new(0));
+        let cfg = RosConfig::new(0);
         let err = connect(&cfg).unwrap_err();
         assert!(
             err.to_string().contains("ros"),
@@ -192,7 +188,7 @@ mod feature_tests {
 
     #[test]
     fn test_ros_connect() {
-        let cfg = RosConfig::from_app(&AppConfig::new(0));
+        let cfg = RosConfig::new(0);
         let handle = connect(&cfg).expect("connect ros");
         assert_eq!(handle.domain_id(), 0);
     }

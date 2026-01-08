@@ -1,4 +1,3 @@
-use crate::config::AppConfig;
 use bevy::prelude::Resource;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -8,20 +7,6 @@ pub struct EmulatorConfig {
     pub domain_id: u32,
     pub robot_name: String,
     pub urdf_xml: String,
-}
-
-impl EmulatorConfig {
-    pub fn from_app(
-        app: &AppConfig,
-        robot_name: impl Into<String>,
-        urdf_xml: impl Into<String>,
-    ) -> Self {
-        Self {
-            domain_id: app.domain_id,
-            robot_name: robot_name.into(),
-            urdf_xml: urdf_xml.into(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -103,7 +88,11 @@ mod tests {
     const URDF: &str = "<robot name=\"test\"></robot>";
 
     fn cfg() -> EmulatorConfig {
-        EmulatorConfig::from_app(&AppConfig::new(0), "dummy", URDF)
+        EmulatorConfig {
+            domain_id: 0,
+            robot_name: "dummy".into(),
+            urdf_xml: URDF.into(),
+        }
     }
 
     #[test]

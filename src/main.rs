@@ -1,8 +1,8 @@
 use clap::Parser;
-use ros_viz_rs::{CliArgs, app};
+
+use ros_viz_rs::{app, options::Options};
 
 fn main() -> anyhow::Result<()> {
-    let cli = CliArgs::parse();
-    let config = cli.into_config();
-    app::run(config)
+    let options = Options::parse();
+    app::run(options)
 }

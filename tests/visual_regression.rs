@@ -1,4 +1,7 @@
 use anyhow::Result;
+use ros_viz_rs::urdf::parse_urdf;
+use ros_viz_rs::visualization::create_urdf_view_app;
+use std::fs;
 use std::path::Path;
 use std::process::Command;
 
@@ -114,19 +117,19 @@ fn visual_regression_tests() -> Result<()> {
 
 fn render_urdf(urdf_path: &str, output_path: &Path) -> Result<RenderResult> {
     // Use the urdf_snapshot helper binary which reuses the factorized visualization code
-    let output = Command::new("cargo")
-        .args(&[
-            "run",
-            "--bin",
-            "urdf_snapshot",
-            "--",
-            urdf_path,
-            output_path.to_str().unwrap(),
-        ])
-        .output()?;
+    // Load and parse URDF
+    let urdf_xml = fs::read_to_string(urdf_path)?;
+    let scene = parse_urdf(&urdf_xml)?;
+
+    // Create app with snapshot export
+    let window_title = format!("Snapshot: {}", urdf_path);
+    let mut app = create_urdf_view_app(scene, window_title, Some(output_path.into()));
+
+    // Run the app (it will exit after capturing the screenshot)
+    let exit_status = app.run();
 
     Ok(RenderResult {
-        success: output.status.success(),
+        success: exit_status.is_success(),
     })
 }
 

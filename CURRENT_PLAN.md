@@ -6,41 +6,6 @@ Purpose: keep a living checklist for pausing/resuming work.
 
 Complete skeleton visualization with proper kinematic chain rendering.
 
-## Completed (Milestone 5 - Skeleton Visualization)
-
-- [x] Enable render, ros, and urdf features by default for easy `cargo run`
-- [x] Switch from app.update() to app.run() so GUI stays open with continuous updates
-- [x] Add 3D geometry (boxes for links, cylinders for joints) to scene entities
-- [x] Implement automatic animation with sine-wave joint motion
-- [x] Test GUI with animated 3D scene and ROS connection (domain 0)
-- [x] Enhanced URDF parsing to extract joint axes, origins, parent/child relationships
-- [x] Built proper kinematic tree from URDF with parent-child transforms
-- [x] Use URDF joint axis data to orient joint cylinders correctly
-- [x] Position links relative to their parent joints using URDF origin data
-- [x] Converted from ROS publisher with emulator to ROS subscriber architecture
-- [x] Connect to external ROS device and subscribe to /robot_description and /joint_states
-- [x] Fixed JointStateMsg structure to match full ROS2 sensor_msgs/JointState
-- [x] Added TransientLocal QoS durability for latched /robot_description topic
-- [x] Successfully receive and parse NAO robot URDF (83 links, 82 joints)
-- [x] Created standalone test_robot_description.rs example tool
-- [x] Cleaned git history of PNG test images
-- [x] Merged AGENT.md into AGENTS.md with comprehensive guidelines
-- [x] Documented principle: always favor updated libraries over downgrading
-- [x] Created test URDF samples: simple_arm, two_link_planar, triple_pendulum, box_bot
-- [x] Built urdf_view.rs example tool for URDF visualization and testing
-- [x] Successfully tested all URDF samples with image export
-- [x] Created visual regression test infrastructure with ImageMagick integration
-- [x] Generated reference images for all URDF samples
-- [x] Automated integration tests verify rendering consistency (0% diff)
-- [x] Made image output paths explicit and user-controlled
-- [x] **Created src/visualization.rs module for reusable skeleton visualization**
-- [x] **Extracted shared geometry, materials, and spawn functions**
-- [x] **Refactored app, urdf_view, and tests to use visualization module**
-- [x] **Updated dependencies: urdf-rs 0.9, k 0.32 (latest versions)**
-- [x] **Fixed urdf-rs 0.9 API compatibility (Vec3 tuple struct access)**
-- [x] **All visual regression tests passing with new skeleton code**
-- [x] **NAO robot (83 links) successfully renders**
-
 ## Next up (Forward Kinematics Integration)
 
 - [ ] Integrate k crate properly for forward kinematics
