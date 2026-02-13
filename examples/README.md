@@ -44,3 +44,33 @@ After running the tool, check the exported images to verify:
 - The kinematic tree hierarchy matches the URDF structure
 
 See [test-data/urdf/README.md](../test-data/urdf/README.md) for expected visualizations of each sample.
+
+---
+
+## Topics Tree Viewer
+
+Display ROS-style topics in an interactive, collapsible tree widget.
+
+### Topics View Usage
+
+```bash
+# Run with built-in default topics:
+cargo run --example topics_tree
+
+# Load topics from a JSON file:
+cargo run --example topics_tree -- topics.json
+```
+
+### JSON format
+
+The input file should be an array of objects, each with a `topic_name` field:
+
+```json
+[
+  { "topic_name": "/robot/joint_states" },
+  { "topic_name": "/sensor/imu/data" },
+  { "topic_name": "/tf" }
+]
+```
+
+Click on a branch node to expand or collapse it.

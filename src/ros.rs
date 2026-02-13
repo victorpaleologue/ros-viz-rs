@@ -1,4 +1,3 @@
-#[cfg(feature = "ros")]
 use ros2_client::{
     Context, DEFAULT_SUBSCRIPTION_QOS, Message, MessageTypeName, Name, Node, NodeName, NodeOptions,
     Subscription,
@@ -8,9 +7,7 @@ use ros2_client::{
         policy::{Durability, History, Reliability},
     },
 };
-#[cfg(feature = "ros")]
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "ros")]
 use tracing::debug;
 
 pub const TOPIC_ROBOT_DESCRIPTION: &str = "/robot_description";
@@ -34,18 +31,12 @@ impl RosConfig {
     }
 }
 
-#[cfg(not(feature = "ros"))]
-#[derive(Debug)]
-pub struct RosHandle;
-
-#[cfg(feature = "ros")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Header {
     pub stamp: Time,
     pub frame_id: String,
 }
 
-#[cfg(feature = "ros")]
 impl Default for Header {
     fn default() -> Self {
         Self {
@@ -55,7 +46,6 @@ impl Default for Header {
     }
 }
 
-#[cfg(feature = "ros")]
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct JointStateMsg {
     pub header: Header,
@@ -65,10 +55,8 @@ pub struct JointStateMsg {
     pub effort: Vec<f64>,
 }
 
-#[cfg(feature = "ros")]
 impl Message for JointStateMsg {}
 
-#[cfg(feature = "ros")]
 pub struct RosHandle {
     _node: Node,
     domain_id: u32,
@@ -76,7 +64,6 @@ pub struct RosHandle {
     joint_state_sub: Subscription<JointStateMsg>,
 }
 
-#[cfg(feature = "ros")]
 impl std::fmt::Debug for RosHandle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RosHandle").finish()
@@ -84,7 +71,6 @@ impl std::fmt::Debug for RosHandle {
 }
 
 /// Establish ROS2 connectivity. When the `ros` feature is disabled, this returns an error so CI can run without ROS2.
-#[cfg(feature = "ros")]
 pub fn connect(config: &RosConfig) -> anyhow::Result<RosHandle> {
     let ctx = Context::new()?;
 
@@ -128,15 +114,6 @@ pub fn connect(config: &RosConfig) -> anyhow::Result<RosHandle> {
     })
 }
 
-/// Establish ROS2 connectivity. When the `ros` feature is disabled, this returns an error so CI can run without ROS2.
-#[cfg(not(feature = "ros"))]
-pub fn connect(_config: &RosConfig) -> anyhow::Result<RosHandle> {
-    Err(anyhow::anyhow!(
-        "Build with --features ros to enable ROS2 connectivity"
-    ))
-}
-
-#[cfg(feature = "ros")]
 impl RosHandle {
     pub fn domain_id(&self) -> u32 {
         self.domain_id
@@ -170,20 +147,6 @@ impl RosHandle {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    #[cfg(not(feature = "ros"))]
-    fn stub_connect_errors_without_feature() {
-        let cfg = RosConfig::new(0);
-        let err = connect(&cfg).unwrap_err();
-        assert!(
-            err.to_string().contains("ros"),
-            "error should mention ros feature"
-        );
-    }
-}
-
-#[cfg(all(test, feature = "ros"))]
-mod feature_tests {
     use super::*;
 
     #[test]

@@ -86,6 +86,7 @@ pub fn build_app(options: &Options) -> App {
 
     if options.snapshot_to.is_some() {
         app.add_plugins(MinimalPlugins);
+        app.add_systems(Startup, write_snapshot_and_exit);
     } else {
         #[cfg(feature = "render")]
         {
@@ -141,6 +142,23 @@ fn maybe_init_ros(options: &Options) -> Option<ros::RosHandle> {
             None
         }
     }
+}
+
+/// Startup system: write a placeholder snapshot image and exit the Bevy loop.
+///
+/// Full GPU-based rendering is not available under `MinimalPlugins`, so we
+/// generate a small PNG in software and immediately send [`AppExit`].
+fn write_snapshot_and_exit(options: Res<Options>, mut exit: EventWriter<AppExit>) {
+    if let Some(ref path) = options.snapshot_to {
+        // Create a minimal 1×1 white PNG (67 bytes).
+        let data = crate::emulator::make_stub_png(options.width, options.height);
+        if let Err(e) = std::fs::write(path, &data) {
+            tracing::error!(?e, ?path, "failed to write snapshot");
+        } else {
+            tracing::info!(?path, "snapshot written");
+        }
+    }
+    exit.send(AppExit::Success);
 }
 
 #[cfg(feature = "render")]

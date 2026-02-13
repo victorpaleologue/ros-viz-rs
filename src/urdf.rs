@@ -39,8 +39,6 @@ impl UrdfScene {
 }
 
 /// Parse URDF text and build an internal scene representation.
-/// When the `urdf` feature is disabled, returns an error to keep CI lightweight.
-#[cfg(feature = "urdf")]
 pub fn parse_urdf(xml: &str) -> anyhow::Result<UrdfScene> {
     let model = urdf_rs::read_from_string(xml)?;
 
@@ -79,28 +77,11 @@ pub fn parse_urdf(xml: &str) -> anyhow::Result<UrdfScene> {
     Ok(UrdfScene { joints, links })
 }
 
-/// Parse URDF text and build an internal scene representation.
-/// When the `urdf` feature is disabled, returns an error to keep CI lightweight.
-#[cfg(not(feature = "urdf"))]
-pub fn parse_urdf(_xml: &str) -> anyhow::Result<UrdfScene> {
-    Err(anyhow::anyhow!(
-        "Build with --features urdf to enable URDF parsing"
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    #[cfg(not(feature = "urdf"))]
-    fn stub_parse_returns_error() {
-        let err = parse_urdf("<robot></robot>").unwrap_err();
-        assert!(err.to_string().contains("URDF") || err.to_string().contains("urdf"));
-    }
-
-    #[test]
-    #[cfg(feature = "urdf")]
     fn empty_robot_parses() {
         // urdf-rs 0.9 successfully parses empty robot tags
         let scene = parse_urdf("<robot name='test'></robot>").expect("parses");
@@ -114,11 +95,6 @@ mod tests {
         assert_eq!(scene.joint_count(), 0);
         assert_eq!(scene.link_count(), 0);
     }
-}
-
-#[cfg(all(test, feature = "urdf"))]
-mod feature_tests {
-    use super::*;
 
     const BOX_BOT: &str = include_str!("../test-data/urdf/box_bot.urdf");
 
