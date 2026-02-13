@@ -329,6 +329,18 @@ fn render_leaf_io(
     let has_pub = pubs.get(entity).is_ok();
 
     if !has_sub && !has_pub {
+        // Still loading – show a cycling dots indicator.
+        ui.indent(format!("io_{}", leaf.info.topic_name), |ui| {
+            let seconds = ui.input(|i| i.time);
+            let phase = (seconds * 2.0) as usize % 4; // 0..3, cycles every 2s
+            let dots = &["", ".", "..", "..."][phase];
+            ui.label(
+                egui::RichText::new(format!("loading{dots}"))
+                    .color(egui::Color32::from_rgb(160, 160, 160))
+                    .italics(),
+            );
+            ui.ctx().request_repaint();
+        });
         return;
     }
 
