@@ -165,21 +165,12 @@ pub struct TopicDataSource;
 // ---------------------------------------------------------------------------
 
 /// Controls how the topics tree is rendered.
-///
-/// Insert this as a Bevy resource before adding [`TopicsTreePlugin`].
-/// Defaults to [`TopicsPanelMode::Side`].
 #[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TopicsPanelMode {
     /// Render as a left side-panel (fixed width, leaves room for other content).
     Side,
     /// Render as the central panel (fills the remaining window area).
     Central,
-}
-
-impl Default for TopicsPanelMode {
-    fn default() -> Self {
-        Self::Side
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -189,14 +180,13 @@ impl Default for TopicsPanelMode {
 /// Bevy plugin that registers the topics-tree UI systems.
 ///
 /// Requires [`bevy_egui::EguiPlugin`] to be added first.
-///
-/// Insert a [`TopicsPanelMode`] resource to choose between a side-panel
-/// (default) and a central panel.
-pub struct TopicsTreePlugin;
+pub struct TopicsTreePlugin {
+    pub panel_mode: TopicsPanelMode,
+}
 
 impl Plugin for TopicsTreePlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<TopicsPanelMode>();
+        app.insert_resource(self.panel_mode);
         app.add_systems(Update, topics_tree_ui_system);
     }
 }
