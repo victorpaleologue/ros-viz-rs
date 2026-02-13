@@ -9,7 +9,7 @@
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 use ros_viz_rs::ros_systems::{RosContext, RosDiscoveryPlugin};
-use ros_viz_rs::topics_view::TopicsTreePlugin;
+use ros_viz_rs::topics_view::{TopicsPanelMode, TopicsTreePlugin};
 
 fn main() {
     let ctx = ros2_client::Context::new().expect("failed to create ROS 2 context");
@@ -27,6 +27,7 @@ fn main() {
         .add_plugins(TopicsTreePlugin)
         .add_plugins(RosDiscoveryPlugin)
         .insert_resource(RosContext(ctx))
+        .insert_resource(TopicsPanelMode::Central)
         .add_systems(Startup, setup)
         .run();
 }

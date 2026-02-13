@@ -161,16 +161,42 @@ impl TopicTreeNode {
 pub struct TopicDataSource;
 
 // ---------------------------------------------------------------------------
+// Panel mode
+// ---------------------------------------------------------------------------
+
+/// Controls how the topics tree is rendered.
+///
+/// Insert this as a Bevy resource before adding [`TopicsTreePlugin`].
+/// Defaults to [`TopicsPanelMode::Side`].
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TopicsPanelMode {
+    /// Render as a left side-panel (fixed width, leaves room for other content).
+    Side,
+    /// Render as the central panel (fills the remaining window area).
+    Central,
+}
+
+impl Default for TopicsPanelMode {
+    fn default() -> Self {
+        Self::Side
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Plugin
 // ---------------------------------------------------------------------------
 
 /// Bevy plugin that registers the topics-tree UI systems.
 ///
-/// Requires the `ui` feature and [`bevy_egui::EguiPlugin`] to be added first.
+/// Requires [`bevy_egui::EguiPlugin`] to be added first.
+///
+/// Insert a [`TopicsPanelMode`] resource to choose between a side-panel
+/// (default) and a central panel.
 pub struct TopicsTreePlugin;
 
 impl Plugin for TopicsTreePlugin {
     fn build(&self, app: &mut App) {
+        app.init_resource::<TopicsPanelMode>();
         app.add_systems(Update, topics_tree_ui_system);
     }
 }
@@ -192,6 +218,7 @@ impl Plugin for TopicsTreePlugin {
 pub fn topics_tree_ui_system(
     mut commands: Commands,
     mut contexts: EguiContexts,
+    panel_mode: Res<TopicsPanelMode>,
     topics: Query<(Entity, &TopicInfo), With<TopicDataSource>>,
     mut values: Query<&mut TopicLatestValue>,
     mut buffers: Query<&mut TopicEditBuffer>,
@@ -202,23 +229,33 @@ pub fn topics_tree_ui_system(
     let tree = TopicTreeNode::from_topics(topic_list);
 
     let ctx = contexts.ctx_mut();
-    egui::SidePanel::left("topics_panel")
-        .default_width(300.0)
-        .show(ctx, |ui| {
-            ui.heading("Topics");
-            ui.separator();
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                render_tree_children(
-                    ui,
-                    &tree,
-                    &mut commands,
-                    &mut values,
-                    &mut buffers,
-                    &subs,
-                    &pubs,
-                );
-            });
+
+    let render_body = |ui: &mut egui::Ui| {
+        ui.heading("Topics");
+        ui.separator();
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            render_tree_children(
+                ui,
+                &tree,
+                &mut commands,
+                &mut values,
+                &mut buffers,
+                &subs,
+                &pubs,
+            );
         });
+    };
+
+    match *panel_mode {
+        TopicsPanelMode::Central => {
+            egui::CentralPanel::default().show(ctx, render_body);
+        }
+        TopicsPanelMode::Side => {
+            egui::SidePanel::left("topics_panel")
+                .default_width(300.0)
+                .show(ctx, render_body);
+        }
+    }
 }
 
 /// Recursively render the children of a [`TopicTreeNode`] using egui.

@@ -18,6 +18,27 @@ use crate::topics_view::{TopicDataSource, TopicInfo, TopicKind};
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Convert a DDS type name to a ROS 2 type name.
+///
+/// DDS discovery reports types like `std_msgs::msg::dds_::String_`.
+/// This function normalises them to `std_msgs/String`.
+///
+/// If the name already looks like a ROS type (`pkg/Type`), it is returned
+/// unchanged.
+pub fn dds_type_to_ros_type(dds_type: &str) -> String {
+    // Pattern: "<pkg>::msg::dds_::<Type>_"
+    let parts: Vec<&str> = dds_type.split("::").collect();
+    if parts.len() >= 4 && parts[1] == "msg" && parts[2] == "dds_" {
+        let pkg = parts[0];
+        let raw_type = parts[3];
+        // The trailing underscore is a DDS convention – strip it.
+        let type_name = raw_type.strip_suffix('_').unwrap_or(raw_type);
+        return format!("{pkg}/{type_name}");
+    }
+    // Already in ROS form or unknown – return as-is.
+    dds_type.to_owned()
+}
+
 /// Classify a raw DDS topic name into a [`TopicKind`].
 ///
 /// ROS 2 maps its concepts onto DDS using naming conventions:
@@ -93,9 +114,9 @@ pub fn poll_discovered_topics(
     for topic_data in &discovered {
         let name = topic_data.topic_name().clone();
         if !existing_names.contains(&name) {
-            let type_name = topic_data.type_name().clone();
+            let type_name = dds_type_to_ros_type(&topic_data.type_name());
             let kind = topic_kind_from_dds_name(&name);
-            tracing::debug!("Discovered new topic: {name}");
+            tracing::debug!("Discovered new topic: {name} (type: {type_name})");
             commands.spawn((TopicInfo::new(name, type_name, kind), TopicDataSource));
         }
     }
@@ -153,6 +174,37 @@ mod tests {
             .iter(app.world())
             .cloned()
             .collect()
+    }
+
+    // -- TopicKind classification tests --
+
+    // -- dds_type_to_ros_type tests --
+
+    #[test]
+    fn dds_type_string() {
+        assert_eq!(
+            dds_type_to_ros_type("std_msgs::msg::dds_::String_"),
+            "std_msgs/String"
+        );
+    }
+
+    #[test]
+    fn dds_type_joint_state() {
+        assert_eq!(
+            dds_type_to_ros_type("sensor_msgs::msg::dds_::JointState_"),
+            "sensor_msgs/JointState"
+        );
+    }
+
+    #[test]
+    fn ros_type_passthrough() {
+        // Already in ROS form – should be returned as-is.
+        assert_eq!(dds_type_to_ros_type("std_msgs/String"), "std_msgs/String");
+    }
+
+    #[test]
+    fn unknown_type_passthrough() {
+        assert_eq!(dds_type_to_ros_type("SomeWeirdType"), "SomeWeirdType");
     }
 
     // -- TopicKind classification tests --
