@@ -1,21 +1,21 @@
 use crate::options::Options;
 
-#[cfg(feature = "ros")]
+
 use crate::ros::{self, RosConfig};
 use crate::urdf::{UrdfScene, parse_urdf};
-#[cfg(feature = "render")]
+
 use bevy::DefaultPlugins;
 use bevy::MinimalPlugins;
 use bevy::app::App;
 use bevy::prelude::*;
-#[cfg(feature = "render")]
+
 use bevy::window::{PresentMode, WindowResolution};
 use std::time::Duration;
 
 use std::collections::HashMap;
 use tracing_subscriber::EnvFilter;
 
-#[cfg(feature = "ros")]
+
 #[derive(Debug, Resource)]
 struct RosState {
     handle: ros::RosHandle,
@@ -77,7 +77,7 @@ pub fn build_app(options: &Options) -> App {
     app.insert_resource(JointPositions::default());
     app.insert_resource(UrdfWaitTimer::default());
 
-    #[cfg(feature = "ros")]
+
     {
         if let Some(ros) = maybe_init_ros(options) {
             app.insert_resource(RosState { handle: ros });
@@ -88,51 +88,39 @@ pub fn build_app(options: &Options) -> App {
         app.add_plugins(MinimalPlugins);
         app.add_systems(Startup, write_snapshot_and_exit);
     } else {
-        #[cfg(feature = "render")]
-        {
-            let window_plugin = bevy::window::WindowPlugin {
-                primary_window: Some(bevy::window::Window {
-                    resolution: WindowResolution::new(options.width as f32, options.height as f32),
-                    present_mode: PresentMode::AutoNoVsync,
-                    ..Default::default()
-                }),
+        let window_plugin = bevy::window::WindowPlugin {
+            primary_window: Some(bevy::window::Window {
+                resolution: WindowResolution::new(options.width as f32, options.height as f32),
+                present_mode: PresentMode::AutoNoVsync,
                 ..Default::default()
-            };
+            }),
+            ..Default::default()
+        };
 
-            app.add_plugins(DefaultPlugins.set(window_plugin).set(bevy::log::LogPlugin {
-                level: bevy::log::Level::WARN,
-                filter: "wgpu_core=warn,wgpu_hal=warn".into(),
-                custom_layer: |_| None,
-            }));
-            app.add_systems(Startup, spawn_render_basics);
-        }
-
-        #[cfg(not(feature = "render"))]
-        {
-            app.add_plugins(MinimalPlugins);
-        }
+        app.add_plugins(DefaultPlugins.set(window_plugin).set(bevy::log::LogPlugin {
+            level: bevy::log::Level::WARN,
+            filter: "wgpu_core=warn,wgpu_hal=warn".into(),
+            custom_layer: |_| None,
+        }));
+        app.add_systems(Startup, spawn_render_basics);
+        app.add_plugins(MinimalPlugins);
     }
 
     // Note: TransformPlugin is included in both DefaultPlugins and MinimalPlugins in Bevy 0.15
 
     // Don't populate scene at startup - wait for ROS /robot_description
     // populate_urdf_scene needs Assets which are only available with DefaultPlugins (render mode)
-    #[cfg(feature = "render")]
     if options.snapshot_to.is_none() {
         app.add_systems(Update, check_and_spawn_robot);
     }
 
     app.add_systems(Update, sync_joint_transforms);
-
-    #[cfg(feature = "ros")]
-    {
-        app.add_systems(Update, (receive_robot_description, receive_joint_states));
-    }
+    app.add_systems(Update, (receive_robot_description, receive_joint_states));
 
     app
 }
 
-#[cfg(feature = "ros")]
+
 fn maybe_init_ros(options: &Options) -> Option<ros::RosHandle> {
     let cfg = RosConfig::new(options.domain);
     match ros::connect(&cfg) {
@@ -161,7 +149,6 @@ fn write_snapshot_and_exit(options: Res<Options>, mut exit: EventWriter<AppExit>
     exit.send(AppExit::Success);
 }
 
-#[cfg(feature = "render")]
 fn populate_urdf_scene_inner(
     commands: &mut Commands,
     scene: &UrdfScene,
@@ -191,7 +178,6 @@ fn sync_joint_transforms(
     }
 }
 
-#[cfg(feature = "render")]
 fn spawn_render_basics(mut commands: Commands) {
     // Camera positioned to view the robot from an angle
     commands.spawn((
@@ -216,7 +202,6 @@ fn spawn_render_basics(mut commands: Commands) {
     });
 }
 
-#[cfg(feature = "ros")]
 fn receive_robot_description(
     mut assets: ResMut<RobotAssets>,
     ros: Option<Res<RosState>>,
@@ -274,7 +259,6 @@ fn receive_robot_description(
     }
 }
 
-#[cfg(feature = "ros")]
 fn receive_joint_states(mut joint_positions: ResMut<JointPositions>, ros: Option<Res<RosState>>) {
     if let Some(ros) = ros.as_ref() {
         match ros.handle.try_take_joint_states() {
@@ -290,7 +274,7 @@ fn receive_joint_states(mut joint_positions: ResMut<JointPositions>, ros: Option
     }
 }
 
-#[cfg(feature = "render")]
+
 fn check_and_spawn_robot(
     mut commands: Commands,
     assets: Res<RobotAssets>,
@@ -377,7 +361,7 @@ mod tests {
         todo!("Update test for new UrdfScene structure with JointInfo/LinkInfo")
     }
 
-    #[cfg(feature = "urdf")]
+
     #[test]
     #[ignore = "needs updating for new architecture"]
     fn joint_commands_update_transforms() {
