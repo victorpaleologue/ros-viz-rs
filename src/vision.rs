@@ -294,10 +294,9 @@ mod tests {
         }
     }
 
-    /// Serializes tests calling [`assert_matches_reference`]: the bless test
-    /// mutates the process-wide `ROS_VIZ_BLESS` variable, which the others
-    /// read, and Rust runs tests in parallel threads of one process.
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    // Tests calling assert_matches_reference hold
+    // crate::diagnostics::env_lock(): the bless test mutates the
+    // process-wide ROS_VIZ_BLESS variable, which the others read.
 
     const WHITE: Rgba<u8> = Rgba([255, 255, 255, 255]);
     const BLACK: Rgba<u8> = Rgba([0, 0, 0, 255]);
@@ -423,7 +422,7 @@ mod tests {
 
     #[test]
     fn assert_matches_reference_passes_within_threshold() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = crate::diagnostics::env_lock();
         let dir = tempfile::tempdir().unwrap();
         let reference_path = dir.path().join("ref.png");
         let artifacts = dir.path().join("artifacts");
@@ -436,7 +435,7 @@ mod tests {
 
     #[test]
     fn assert_matches_reference_missing_reference_writes_candidate() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = crate::diagnostics::env_lock();
         let dir = tempfile::tempdir().unwrap();
         let reference_path = dir.path().join("snapshot.png");
         let artifacts = dir.path().join("artifacts");
@@ -450,7 +449,7 @@ mod tests {
 
     #[test]
     fn assert_matches_reference_failure_writes_actual_and_diff() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = crate::diagnostics::env_lock();
         let dir = tempfile::tempdir().unwrap();
         let reference_path = dir.path().join("scene.png");
         let artifacts = dir.path().join("artifacts");
@@ -466,7 +465,7 @@ mod tests {
 
     #[test]
     fn assert_matches_reference_dimension_mismatch_fails_with_artifacts() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = crate::diagnostics::env_lock();
         let dir = tempfile::tempdir().unwrap();
         let reference_path = dir.path().join("size.png");
         let artifacts = dir.path().join("artifacts");
@@ -477,17 +476,18 @@ mod tests {
         assert!(artifacts.join("size.actual.png").exists());
     }
 
-    /// Bless flow, exercised via the documented env var. Holds [`ENV_LOCK`]
+    /// Bless flow, exercised via the documented env var. Holds the shared env lock
     /// like the other reference tests since the environment is process-wide.
     #[test]
     fn assert_matches_reference_bless_overwrites_reference() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = crate::diagnostics::env_lock();
         let dir = tempfile::tempdir().unwrap();
         let reference_path = dir.path().join("nested").join("bless.png");
         let artifacts = dir.path().join("artifacts");
         let img = solid(8, 8, BLUE);
-        // SAFETY: tests in this binary run in threads of one process; this is
-        // the only test mutating this variable and it restores it before exit.
+        // SAFETY: serialized with every other env-mutating test through
+        // crate::diagnostics::env_lock(); concurrent env *readers* on other
+        // threads remain a theoretical race accepted in test code.
         unsafe { std::env::set_var(BLESS_ENV_VAR, "1") };
         let result = assert_matches_reference(&img, &reference_path, 0.0, &artifacts);
         unsafe { std::env::remove_var(BLESS_ENV_VAR) };

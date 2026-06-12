@@ -105,30 +105,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build release binary
         run: cargo build --release
-      - name: Bundle .app and .dmg
+      - name: Bundle .app and drag-to-install .dmg
         env:
           TAG: ${{ needs.tag.outputs.tag }}
         run: |
-          version="${TAG#v}"
-          app="ros-viz-rs.app"
-          mkdir -p "$app/Contents/MacOS"
-          cp target/release/ros-viz-rs "$app/Contents/MacOS/ros-viz-rs"
-          cat > "$app/Contents/Info.plist" <<PLIST
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>CFBundleExecutable</key><string>ros-viz-rs</string>
-            <key>CFBundleIdentifier</key><string>eu.palaio.ros-viz-rs</string>
-            <key>CFBundleName</key><string>ros-viz-rs</string>
-            <key>CFBundleShortVersionString</key><string>$version</string>
-            <key>CFBundlePackageType</key><string>APPL</string>
-            <key>NSHighResolutionCapable</key><true/>
-          </dict>
-          </plist>
-          PLIST
-          hdiutil create -volname "ros-viz-rs" -srcfolder "$app" -ov -format UDZO \
-            "ros-viz-rs-$version-macos-arm64.dmg"
+          brew install create-dmg
+          ./scripts/package_macos.sh "${TAG#v}" arm64
       - name: Upload to release
         env:
           GH_TOKEN: ${{ github.token }}

@@ -7,7 +7,7 @@
 //! discovery events and reconciles them with the set of [`TopicInfo`]
 //! entities in the world.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread::JoinHandle;
@@ -70,6 +70,7 @@ impl RosPlugin {
 impl Plugin for RosPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(self.session.clone());
+        app.init_resource::<TopicIndex>();
         app.add_systems(Update, populate_topics);
     }
 }
@@ -149,51 +150,91 @@ impl ReadersAndWriters {
 // ---------------------------------------------------------------------------
 // Systems
 // ---------------------------------------------------------------------------
+/// O(1) lookups for discovery bookkeeping: topic name -> entity for endpoint
+/// arrivals, endpoint GUID -> entity for losses. Stale entries (entity gone)
+/// are treated as absent and dropped lazily.
+#[derive(Resource, Default)]
+pub(crate) struct TopicIndex {
+    by_name: HashMap<String, Entity>,
+    by_guid: HashMap<GUID, Entity>,
+}
+
 /// Drain [`NodeEvent`]s to list topics and their readers/writers as they are discovered and lost.
 /// Spawns one entity per topic, with components [`TopicInfo`] and [`ReadersAndWriters`].
 /// When no more readers/writers are detected for a topic, its entity is despawned.
 pub(crate) fn populate_topics(
     mut commands: Commands,
     ros_session: Res<RosSession>,
+    mut index: ResMut<TopicIndex>,
     mut topics: Query<(Entity, &TopicInfo, &mut ReadersAndWriters)>,
 ) {
     // Update the set of readers/writers for each topic based on DDS discovery events.
     // If the topic is new, create a new entity with the raw DDS topic name and type.
     let update_or_create = |commands: &mut Commands,
+                            index: &mut TopicIndex,
                             topics: &mut Query<(Entity, &TopicInfo, &mut ReadersAndWriters)>,
                             r_or_w: ReaderOrWriter,
                             endpoint: EndpointDescription| {
-        let existing = topics
-            .iter()
-            .find(|(_, info, _)| info.topic_name == endpoint.topic_name)
-            .map(|(entity, _, _)| entity);
+        let guid = match &r_or_w {
+            ReaderOrWriter::Reader(guid) | ReaderOrWriter::Writer(guid) => *guid,
+        };
+        let existing = index
+            .by_name
+            .get(&endpoint.topic_name)
+            .copied()
+            // The entity may have been despawned externally; treat a stale
+            // index entry as absent.
+            .filter(|&entity| topics.get(entity).is_ok())
+            // Index miss: fall back to a scan and backfill, so entities
+            // spawned outside this system are still found.
+            .or_else(|| {
+                let found = topics
+                    .iter()
+                    .find(|(_, info, _)| info.topic_name == endpoint.topic_name)
+                    .map(|(entity, _, _)| entity);
+                if let Some(entity) = found {
+                    index.by_name.insert(endpoint.topic_name.clone(), entity);
+                }
+                found
+            });
         if let Some(entity) = existing {
-            let (_, _, mut rw) = topics.get_mut(entity).unwrap();
+            let (_, _, mut rw) = topics.get_mut(entity).expect("checked above");
             rw.add(r_or_w);
+            index.by_guid.insert(guid, entity);
         } else {
-            // Entity doesn't exist yet -- spawn it with the reader/writer already set.
-            // We can't query back a just-spawned entity (commands are deferred).
+            // Entity doesn't exist yet -- spawn it with the reader/writer
+            // already set. We can't query a just-spawned entity (commands
+            // are deferred), but its id is known and indexed immediately.
             let type_name = dds_type_to_ros_type(&endpoint.type_name);
             let kind = topic_kind_from_dds_name(&endpoint.topic_name);
             let topic_info = TopicInfo::new(&endpoint.topic_name, &type_name, kind);
             let mut rw = ReadersAndWriters::new();
             rw.add(r_or_w);
-            commands.spawn((topic_info, rw));
+            let entity = commands.spawn((topic_info, rw)).id();
+            index.by_name.insert(endpoint.topic_name.clone(), entity);
+            index.by_guid.insert(guid, entity);
         }
     };
 
     // Remove the reader/writer from the topic's ReadersAndWriters.  If that was the last one, despawn the topic entity.
     let remove_and_cleanup = |commands: &mut Commands,
+                              index: &mut TopicIndex,
                               topics: &mut Query<(Entity, &TopicInfo, &mut ReadersAndWriters)>,
                               r_or_w: ReaderOrWriter| {
-        topics.iter_mut().for_each(|(entity, _, mut rw)| {
-            if rw.remove(&r_or_w) {
-                // If this endpoint was the only reader/writer, remove the topic entity.
-                if rw.readers.is_empty() && rw.writers.is_empty() {
-                    commands.entity(entity).despawn();
-                }
-            }
-        });
+        let guid = match &r_or_w {
+            ReaderOrWriter::Reader(guid) | ReaderOrWriter::Writer(guid) => *guid,
+        };
+        let Some(entity) = index.by_guid.remove(&guid) else {
+            return;
+        };
+        let Ok((entity, info, mut rw)) = topics.get_mut(entity) else {
+            return;
+        };
+        if rw.remove(&r_or_w) && rw.readers.is_empty() && rw.writers.is_empty() {
+            // That was the topic's last endpoint: drop the entity.
+            index.by_name.remove(&info.topic_name);
+            commands.entity(entity).despawn();
+        }
     };
 
     while let Ok(event) = ros_session.event_receiver.try_recv() {
@@ -204,6 +245,7 @@ pub(crate) fn populate_topics(
             DomainParticipantStatusEvent::WriterDetected { writer } => {
                 update_or_create(
                     &mut commands,
+                    &mut index,
                     &mut topics,
                     ReaderOrWriter::Writer(writer.guid),
                     writer,
@@ -212,16 +254,27 @@ pub(crate) fn populate_topics(
             DomainParticipantStatusEvent::ReaderDetected { reader } => {
                 update_or_create(
                     &mut commands,
+                    &mut index,
                     &mut topics,
                     ReaderOrWriter::Reader(reader.guid),
                     reader,
                 );
             }
             DomainParticipantStatusEvent::WriterLost { guid, .. } => {
-                remove_and_cleanup(&mut commands, &mut topics, ReaderOrWriter::Writer(guid));
+                remove_and_cleanup(
+                    &mut commands,
+                    &mut index,
+                    &mut topics,
+                    ReaderOrWriter::Writer(guid),
+                );
             }
             DomainParticipantStatusEvent::ReaderLost { guid, .. } => {
-                remove_and_cleanup(&mut commands, &mut topics, ReaderOrWriter::Reader(guid));
+                remove_and_cleanup(
+                    &mut commands,
+                    &mut index,
+                    &mut topics,
+                    ReaderOrWriter::Reader(guid),
+                );
             }
             _ => {}
         }
@@ -437,6 +490,7 @@ mod tests {
         ros_session.event_receiver = rx;
         app.insert_resource(ros_session);
 
+        app.init_resource::<TopicIndex>();
         app.add_systems(Update, populate_topics);
         app.update();
 
@@ -496,6 +550,7 @@ mod tests {
         ros_session.event_receiver = rx;
         app.insert_resource(ros_session);
 
+        app.init_resource::<TopicIndex>();
         app.add_systems(Update, populate_topics);
         app.update();
 
@@ -565,6 +620,7 @@ mod tests {
         ros_session.event_receiver = rx;
         app.insert_resource(ros_session);
 
+        app.init_resource::<TopicIndex>();
         app.add_systems(Update, populate_topics);
         app.update();
         // Should have exactly one entity for rt/chatter (no duplicate).

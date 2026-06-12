@@ -50,17 +50,11 @@ pub struct Options {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, OnceLock};
-
-    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-
-    fn env_lock() -> &'static Mutex<()> {
-        ENV_LOCK.get_or_init(|| Mutex::new(()))
-    }
-
     fn with_domain_env<T, F: FnOnce() -> T>(value: Option<&str>, f: F) -> T {
-        let _guard = env_lock().lock().expect("lock poisoned");
-        // Safety: mutations are serialized by the mutex to avoid concurrent env races in tests.
+        let _guard = crate::diagnostics::env_lock();
+        // SAFETY: serialized with every other env-mutating test through
+        // crate::diagnostics::env_lock(); concurrent env readers on other
+        // threads remain a theoretical race accepted in test code.
         match value {
             Some(v) => unsafe { std::env::set_var("ROS_DOMAIN_ID", v) },
             None => unsafe { std::env::remove_var("ROS_DOMAIN_ID") },

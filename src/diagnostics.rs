@@ -56,6 +56,19 @@ macro_rules! require_dds_multicast {
     };
 }
 
+/// Process-wide lock serializing test code that mutates environment
+/// variables.
+///
+/// `std::env::set_var` is unsound under concurrency: the environment is one
+/// global C resource, and even readers race with writers. All env-mutating
+/// tests in this crate take this single lock (a per-module lock would still
+/// let two modules' tests race each other). Non-test threads reading the
+/// environment concurrently remain a theoretical race we accept in tests.
+pub fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 #[cfg(test)]
 mod tests {
     /// The probe must never panic or hang, whatever the network state.
