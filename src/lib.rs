@@ -1,4 +1,6 @@
 pub mod app;
+pub mod demo;
+pub mod diagnostics;
 pub mod emulator;
 pub mod messages;
 pub mod options;

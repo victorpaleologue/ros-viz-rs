@@ -24,50 +24,7 @@ use ros2_client::ros2::{
 use crate::ros_msgs;
 use crate::topics_io::{setup_typed_publisher, setup_typed_subscription};
 
-/// Joint positions as a function of elapsed time (seconds).
-pub type JointScript = Box<dyn FnMut(f64) -> Vec<(String, f64)> + Send>;
-
-/// Ready-made joint scripts for demos and tests.
-pub mod scripts {
-    use super::JointScript;
-
-    /// Hold the given positions forever.
-    pub fn static_pose(pose: Vec<(String, f64)>) -> JointScript {
-        Box::new(move |_t| pose.clone())
-    }
-
-    /// Sweep every joint with a sine wave at slightly different frequencies.
-    pub fn sine_sweep(joints: Vec<String>, amplitude: f64) -> JointScript {
-        Box::new(move |t| {
-            joints
-                .iter()
-                .enumerate()
-                .map(|(i, name)| {
-                    let freq = 0.5 + i as f64 * 0.3;
-                    (name.clone(), amplitude * (t * freq).sin())
-                })
-                .collect()
-        })
-    }
-
-    /// A NAO waving hello with its right arm.
-    ///
-    /// Joint names follow the NAO H25 description (see
-    /// <http://doc.aldebaran.com/2-8/family/nao_technical/joints_naov6.html>).
-    pub fn nao_wave() -> JointScript {
-        Box::new(|t| {
-            let swing = (t * 4.0).sin();
-            vec![
-                ("RShoulderPitch".into(), -1.2),
-                ("RShoulderRoll".into(), -0.25),
-                ("RElbowYaw".into(), 1.2),
-                ("RElbowRoll".into(), 0.9 + 0.35 * swing),
-                ("RWristYaw".into(), 0.0),
-                ("HeadYaw".into(), -0.25 + 0.1 * swing),
-            ]
-        })
-    }
-}
+pub use crate::demo::{JointScript, scripts};
 
 /// Configuration for [`Emulator::spawn`].
 pub struct EmulatorConfig {
@@ -282,20 +239,8 @@ mod tests {
     const URDF: &str = include_str!("../test-data/urdf/two_link_planar.urdf");
 
     #[test]
-    fn scripts_produce_expected_joints() {
-        let mut wave = scripts::nao_wave();
-        let pose = wave(0.0);
-        assert!(pose.iter().any(|(n, _)| n == "RShoulderPitch"));
-
-        let mut sweep = scripts::sine_sweep(vec!["a".into(), "b".into()], 1.0);
-        assert_eq!(sweep(0.0).len(), 2);
-
-        let mut fixed = scripts::static_pose(vec![("j".into(), 0.5)]);
-        assert_eq!(fixed(123.0), vec![("j".to_string(), 0.5)]);
-    }
-
-    #[test]
     fn emulator_publishes_description_and_joint_states() {
+        crate::require_dds_multicast!();
         let domain = random_domain_id();
         let emulator = Emulator::spawn(
             EmulatorConfig::new(domain, URDF)

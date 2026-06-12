@@ -169,7 +169,7 @@ mod tests {
     use std::f64::consts::FRAC_PI_2;
 
     const TWO_LINK: &str = include_str!("../../test-data/urdf/two_link_planar.urdf");
-    const NAO: &str = include_str!("../../test-data/urdf/nao_robot.urdf");
+    const NAO: &str = include_str!("../../assets/nao_robot.urdf");
 
     #[test]
     fn parses_full_urdf() {

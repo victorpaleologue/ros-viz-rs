@@ -20,6 +20,10 @@ pub struct Options {
     #[arg(long, env = "ROS_DOMAIN_ID", value_name = "ID", default_value_t = DEFAULT_ROS_DOMAIN_ID)]
     pub domain: u16,
 
+    /// Demo mode: no ROS connection; shows an embedded NAO waving hello.
+    #[arg(long)]
+    pub demo: bool,
+
     /// Run without creating a native window and save the rendered frame to the given path.
     #[arg(long, value_name = "PATH")]
     pub snapshot_to: Option<PathBuf>,

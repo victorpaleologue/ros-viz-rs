@@ -170,21 +170,56 @@ fn box_bot_renders() {
 fn nao_skeleton_renders() {
     // Without the nao_meshes package on disk the NAO renders as fallback
     // markers — still a strong structural check on FK and spawning.
-    visual_test("test-data/urdf/nao_robot.urdf", "nao_robot", &[]);
+    visual_test("assets/nao_robot.urdf", "nao_robot", &[]);
 }
 
 #[test]
 fn nao_posed_differs_from_rest() {
     let _gpu = gpu_lock();
-    let rest = render_urdf("test-data/urdf/nao_robot.urdf", &[]);
+    let rest = render_urdf("assets/nao_robot.urdf", &[]);
     let posed = render_urdf(
-        "test-data/urdf/nao_robot.urdf",
+        "assets/nao_robot.urdf",
         &[("LShoulderPitch", -1.5), ("HeadYaw", 0.8)],
     );
     let rmse = vision::rmse(&rest, &posed).expect("same dimensions");
     assert!(
         rmse > 0.004,
         "posing joints changed almost nothing (rmse {rmse:.5}) — FK broken?"
+    );
+}
+
+#[test]
+fn demo_mode_renders_and_waves() {
+    let _gpu = gpu_lock();
+    let mut app = App::new();
+    app.add_plugins(SnapshotPlugin {
+        width: WIDTH,
+        height: HEIGHT,
+    });
+    app.add_plugins(RobotScenePlugin);
+    app.add_plugins(ros_viz_rs::demo::DemoPlugin);
+    app.insert_resource(ClearColor(Color::srgb(0.13, 0.14, 0.17)));
+    app.add_systems(
+        Update,
+        |mut commands: Commands,
+         cameras: Query<Entity, (With<SnapshotCamera>, Without<AutoFrameCamera>)>| {
+            for entity in cameras.iter() {
+                commands.entity(entity).insert(AutoFrameCamera);
+            }
+        },
+    );
+    let lights = |mut commands: Commands| spawn_lights(&mut commands);
+    app.add_systems(Startup, lights);
+
+    let early = capture(&mut app, 12).expect("first capture");
+    assert_robot_visible(&early, "demo_nao");
+    // Half a second later the wave script is in a different phase.
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    let later = capture(&mut app, 2).expect("second capture");
+    let rmse = vision::rmse(&early, &later).expect("same dimensions");
+    assert!(
+        rmse > 0.001,
+        "the demo NAO should be waving (rmse {rmse:.5} between frames)"
     );
 }
 

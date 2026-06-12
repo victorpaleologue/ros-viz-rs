@@ -689,6 +689,7 @@ mod tests {
     /// propagate.
     #[test]
     fn discovered_topics_appear_as_entities() {
+        crate::require_dds_multicast!();
         // -- set up ROS context + node + topics --
         let domain_id = random_domain_id();
         let ctx = Context::with_options(ContextOptions::new().domain_id(domain_id))

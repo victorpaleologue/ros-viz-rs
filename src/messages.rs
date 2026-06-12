@@ -480,6 +480,7 @@ mod tests {
 
     #[test]
     fn dds_round_trip_string() {
+        crate::require_dds_multicast!();
         let sent = json!({"data": "hello reflection"});
         let received = pub_sub_round_trip("std_msgs/String", "/registry_test_string", sent.clone());
         assert_eq!(received, sent);
@@ -487,6 +488,7 @@ mod tests {
 
     #[test]
     fn dds_round_trip_twist() {
+        crate::require_dds_multicast!();
         let sent = json!({
             "linear": {"x": 1.5, "y": 0.0, "z": -0.5},
             "angular": {"x": 0.0, "y": 0.0, "z": 3.25},
@@ -498,6 +500,7 @@ mod tests {
 
     #[test]
     fn dds_round_trip_joint_state() {
+        crate::require_dds_multicast!();
         let sent = json!({
             "header": {"stamp": {"sec": 12, "nanosec": 34}, "frame_id": "base"},
             "name": ["shoulder", "elbow"],

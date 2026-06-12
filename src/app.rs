@@ -130,6 +130,11 @@ pub fn build_app(options: &Options) -> App {
     app.insert_resource(ClearColor(Color::srgb(0.13, 0.14, 0.17)));
     app.add_plugins(RobotScenePlugin);
 
+    if options.demo {
+        app.add_plugins(crate::demo::DemoPlugin);
+        return app;
+    }
+
     match RosPlugin::new(options.domain, "ros_viz_rs") {
         Ok(ros) => {
             app.add_plugins((ros, TopicIOPlugin));

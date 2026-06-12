@@ -36,15 +36,16 @@ fn snapshot_app(domain: u16, path: &std::path::Path) {
     let options = Options {
         domain,
         snapshot_to: Some(path.to_path_buf()),
-        package: vec![],
         width: 640,
         height: 480,
+        ..Options::default()
     };
     ros_viz_rs::app::run(options).expect("app renders the emulated robot");
 }
 
 #[test]
 fn emulated_robot_renders_through_full_app() {
+    ros_viz_rs::require_dds_multicast!();
     let _gpu = gpu_lock();
     let domain = random_domain_id();
 

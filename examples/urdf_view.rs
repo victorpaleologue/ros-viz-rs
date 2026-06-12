@@ -1,7 +1,7 @@
 //! View a URDF file, optionally posing joints and exporting a snapshot.
 //!
 //! ```bash
-//! cargo run --example urdf_view test-data/urdf/nao_robot.urdf
+//! cargo run --example urdf_view assets/nao_robot.urdf
 //! cargo run --example urdf_view robot.urdf --package my_pkg=/path/to/pkg \
 //!     --joint HeadYaw=0.5 --export-snapshot out.png
 //! ```
