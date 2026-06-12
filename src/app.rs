@@ -131,12 +131,21 @@ pub fn build_app(options: &Options) -> App {
         });
     }
     if windowed {
+        #[allow(unused_mut)]
+        let mut window = bevy::window::Window {
+            title: "ros-viz-rs".into(),
+            resolution: bevy::window::WindowResolution::new(options.width, options.height),
+            ..Default::default()
+        };
+        // On the web, render into the page's canvas and track its size.
+        #[cfg(target_arch = "wasm32")]
+        {
+            window.canvas = Some("#ros-viz-canvas".into());
+            window.fit_canvas_to_parent = true;
+            window.prevent_default_event_handling = false;
+        }
         app.add_plugins(DefaultPlugins.set(bevy::window::WindowPlugin {
-            primary_window: Some(bevy::window::Window {
-                title: "ros-viz-rs".into(),
-                resolution: bevy::window::WindowResolution::new(options.width, options.height),
-                ..Default::default()
-            }),
+            primary_window: Some(window),
             ..Default::default()
         }));
         app.add_plugins(EguiPlugin::default());

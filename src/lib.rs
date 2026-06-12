@@ -19,3 +19,5 @@ pub mod topics;
 pub mod topics_io;
 pub mod topics_view;
 pub mod vision;
+#[cfg(target_arch = "wasm32")]
+pub mod web;

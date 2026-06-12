@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ros-viz-rs — ROS 2 robot visualizer in your browser</title>
+  <style>
+    :root {
+      --bg: #14161b;
+      --panel: #1d2026;
+      --text: #e6e8ee;
+      --muted: #9aa1ad;
+      --accent: #61b3ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    header, main, footer {
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 0 1.25rem;
+    }
+    header { padding-top: 2.5rem; }
+    h1 { font-size: 2rem; margin: 0 0 0.25rem; }
+    h1 a { color: var(--text); text-decoration: none; }
+    .tagline { color: var(--muted); margin: 0 0 1.5rem; }
+    .viewer {
+      background: var(--panel);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 6px 30px rgba(0, 0, 0, 0.35);
+    }
+    .viewer-canvas {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 4 / 3;
+    }
+    #ros-viz-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100% !important;
+      height: 100% !important;
+      outline: none;
+    }
+    #loading {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+    }
+    .controls {
+      display: flex;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+      padding: 0.8rem;
+      border-top: 1px solid #2a2e36;
+    }
+    .controls input {
+      flex: 1;
+      min-width: 220px;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid #2a2e36;
+      border-radius: 8px;
+      padding: 0.55rem 0.8rem;
+      font: inherit;
+    }
+    .controls button {
+      background: var(--accent);
+      color: #0b1622;
+      font-weight: 600;
+      border: 0;
+      border-radius: 8px;
+      padding: 0.55rem 1.1rem;
+      cursor: pointer;
+      font: inherit;
+    }
+    .controls button:disabled { opacity: 0.5; cursor: default; }
+    section { margin: 2.5rem 0; }
+    h2 { font-size: 1.3rem; }
+    p, li { color: var(--muted); }
+    strong, a { color: var(--text); }
+    a { color: var(--accent); }
+    code {
+      background: var(--panel);
+      border-radius: 6px;
+      padding: 0.1rem 0.4rem;
+      font-size: 0.9em;
+    }
+    footer {
+      padding: 2rem 1.25rem 3rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1><a href="https://github.com/victorpaleologue/ros-viz-rs">ros-viz-rs</a></h1>
+    <p class="tagline">A generic ROS 2 robot visualizer in Rust — running right here, in your browser.</p>
+  </header>
+
+  <main>
+    <div class="viewer">
+      <div class="viewer-canvas">
+        <canvas id="ros-viz-canvas"></canvas>
+        <div id="loading">Loading the visualizer (a few MB of WebAssembly)…</div>
+      </div>
+      <div class="controls">
+        <input id="rosbridge-url" type="text"
+               placeholder="ws://localhost:9090 — rosbridge URL of your robot (optional)" />
+        <button id="connect" disabled>Connect</button>
+        <button id="demo" disabled>NAO demo</button>
+      </div>
+    </div>
+
+    <section>
+      <h2>What is this?</h2>
+      <p>
+        The robot above is a simulated <strong>NAO</strong> waving hello: its URDF
+        description is parsed, forward kinematics are computed with the
+        <a href="https://crates.io/crates/k">k</a> crate, and
+        <a href="https://bevy.org">Bevy</a> renders it — all compiled to
+        WebAssembly from the same Rust code that runs natively.
+      </p>
+      <p>
+        Because <strong>ros-viz-rs</strong> talks DDS directly (no rclcpp, no ROS
+        installation), the native app runs anywhere Rust runs — <strong>macOS,
+        Windows, Linux</strong> — and the browser build connects to any robot
+        exposing a <a href="https://github.com/RobotWebTools/rosbridge_suite">rosbridge</a>
+        server: paste its URL above and press Connect.
+      </p>
+    </section>
+
+    <section>
+      <h2>Why Rust for ROS tooling?</h2>
+      <ul>
+        <li>One codebase, every platform — including this web page.</li>
+        <li>No ROS installation needed to <em>look</em> at a robot.</li>
+        <li>Native performance for rendering and kinematics, memory safety for free.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Get it</h2>
+      <p>
+        <a href="https://github.com/victorpaleologue/ros-viz-rs/releases">Releases</a>
+        ship a macOS <code>.dmg</code>, a Linux <code>.deb</code> and a Windows
+        <code>.exe</code>; or <code>cargo install ros-viz-rs</code>. Sources on
+        <a href="https://github.com/victorpaleologue/ros-viz-rs">GitHub</a>,
+        MIT licensed — free to use, including commercially.
+      </p>
+    </section>
+  </main>
+
+  <footer>
+    © Victor Paléologue — MIT license. The NAO robot is a product of Aldebaran;
+    its meshes are not distributed with this site.
+  </footer>
+
+  <script type="module">
+    import init, { start } from "./pkg/ros_viz_rs.js";
+
+    const loading = document.getElementById("loading");
+    const urlInput = document.getElementById("rosbridge-url");
+    const connectButton = document.getElementById("connect");
+    const demoButton = document.getElementById("demo");
+    let started = false;
+
+    function launch(url) {
+      if (started) {
+        // The Bevy app owns the canvas for the page's lifetime; switching
+        // modes is a reload with the URL in the fragment.
+        const target = url ? `#${encodeURIComponent(url)}` : "#";
+        window.location.hash = target;
+        window.location.reload();
+        return;
+      }
+      started = true;
+      loading.remove();
+      start(url ?? undefined);
+    }
+
+    await init();
+    connectButton.disabled = false;
+    demoButton.disabled = false;
+    connectButton.onclick = () => launch(urlInput.value.trim() || null);
+    demoButton.onclick = () => launch(null);
+
+    // Auto-start: rosbridge URL from the fragment, demo otherwise.
+    const fragment = decodeURIComponent(window.location.hash.slice(1));
+    if (fragment.startsWith("ws://") || fragment.startsWith("wss://")) {
+      urlInput.value = fragment;
+      launch(fragment);
+    } else {
+      launch(null);
+    }
+  </script>
+</body>
+</html>

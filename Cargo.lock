@@ -5390,6 +5390,7 @@ dependencies = [
  "tracing-subscriber",
  "tungstenite 0.29.0",
  "urdf-rs",
+ "wasm-bindgen",
 ]
 
 [[package]]

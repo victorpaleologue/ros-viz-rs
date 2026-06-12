@@ -51,6 +51,12 @@ async-channel = { version = "2.3", optional = true }
 futures = { version = "0.3", optional = true }
 ewebsock = { version = "0.8", optional = true }
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dev-dependencies]
 chrono = ">=0.4.35"
 tempfile = "3"
