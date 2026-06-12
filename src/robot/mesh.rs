@@ -97,7 +97,7 @@ impl MeshResolver {
 /// Load and triangulate a mesh file (STL, OBJ or COLLADA `.dae`).
 pub fn load_mesh(path: impl AsRef<Path>) -> anyhow::Result<LoadedMesh> {
     let scene = mesh_loader::Loader::default()
-        .merge_meshes(true)
+        .merge_meshes(false)
         .load(path.as_ref())?;
     scene_to_mesh(scene, path.as_ref())
 }
@@ -106,25 +106,46 @@ pub fn load_mesh(path: impl AsRef<Path>) -> anyhow::Result<LoadedMesh> {
 /// extension (used on wasm where files arrive over HTTP).
 pub fn load_mesh_from_slice(bytes: &[u8], name_hint: &str) -> anyhow::Result<LoadedMesh> {
     let scene = mesh_loader::Loader::default()
-        .merge_meshes(true)
+        .merge_meshes(false)
         .load_from_slice(bytes, name_hint)?;
     scene_to_mesh(scene, Path::new(name_hint))
 }
 
+/// Merge submeshes with explicit vertex offsets.
+///
+/// Not `mesh_loader::Mesh::merge`: as of mesh-loader 0.1.13 it advances the
+/// index offset by `last_face[2] + 1`, which mis-stitches COLLADA files whose
+/// submesh faces do not end on their highest vertex index (e.g. the UR e-series
+/// visual meshes) — most of the geometry then ends up unreferenced.
 fn scene_to_mesh(scene: mesh_loader::Scene, path: &Path) -> anyhow::Result<LoadedMesh> {
-    let mesh = mesh_loader::Mesh::merge(scene.meshes);
+    let mut out = LoadedMesh::default();
+    let all_normals = scene
+        .meshes
+        .iter()
+        .all(|m| m.normals.len() == m.vertices.len());
+    let all_colors = scene
+        .meshes
+        .iter()
+        .all(|m| m.colors[0].len() == m.vertices.len());
+
+    for mesh in scene.meshes {
+        let offset = out.vertices.len() as u32;
+        out.indices
+            .extend(mesh.faces.iter().flatten().map(|i| i + offset));
+        out.vertices.extend(mesh.vertices);
+        if all_normals {
+            out.normals.extend(mesh.normals);
+        }
+        if all_colors {
+            out.colors.extend(mesh.colors[0].iter().copied());
+        }
+    }
     anyhow::ensure!(
-        !mesh.vertices.is_empty(),
+        !out.vertices.is_empty(),
         "no geometry in mesh file {}",
         path.display()
     );
-    let indices = mesh.faces.iter().flatten().copied().collect();
-    Ok(LoadedMesh {
-        vertices: mesh.vertices,
-        normals: mesh.normals,
-        indices,
-        colors: mesh.colors[0].clone(),
-    })
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -163,6 +184,68 @@ endsolid tri
         let mesh =
             load_mesh_from_slice(TRIANGLE_STL.as_bytes(), "tri.stl").expect("loads from bytes");
         assert_eq!(mesh.vertices.len(), 3);
+    }
+
+    /// Two-submesh COLLADA whose first submesh's *last* face references low
+    /// vertex indices: `mesh_loader::Mesh::merge` (0.1.13) computes the next
+    /// submesh's offset from that face and mis-stitches the geometry, which
+    /// is why [`scene_to_mesh`] merges with explicit per-submesh offsets.
+    const TWO_SUBMESH_DAE: &str = r##"<?xml version="1.0" encoding="utf-8"?>
+<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
+  <library_geometries>
+    <geometry id="g1"><mesh>
+      <source id="g1-pos">
+        <float_array id="g1-pos-array" count="18">0 0 0 1 0 0 0 1 0 2 0 0 3 0 0 2 1 0</float_array>
+        <technique_common><accessor source="#g1-pos-array" count="6" stride="3">
+          <param name="X" type="float"/><param name="Y" type="float"/><param name="Z" type="float"/>
+        </accessor></technique_common>
+      </source>
+      <vertices id="g1-v"><input semantic="POSITION" source="#g1-pos"/></vertices>
+      <triangles count="2"><input semantic="VERTEX" source="#g1-v" offset="0"/>
+        <p>3 4 5 0 1 2</p>
+      </triangles>
+    </mesh></geometry>
+    <geometry id="g2"><mesh>
+      <source id="g2-pos">
+        <float_array id="g2-pos-array" count="9">5 0 0 6 0 0 5 1 0</float_array>
+        <technique_common><accessor source="#g2-pos-array" count="3" stride="3">
+          <param name="X" type="float"/><param name="Y" type="float"/><param name="Z" type="float"/>
+        </accessor></technique_common>
+      </source>
+      <vertices id="g2-v"><input semantic="POSITION" source="#g2-pos"/></vertices>
+      <triangles count="1"><input semantic="VERTEX" source="#g2-v" offset="0"/>
+        <p>0 1 2</p>
+      </triangles>
+    </mesh></geometry>
+  </library_geometries>
+  <library_visual_scenes>
+    <visual_scene id="scene">
+      <node id="n1"><instance_geometry url="#g1"/></node>
+      <node id="n2"><instance_geometry url="#g2"/></node>
+    </visual_scene>
+  </library_visual_scenes>
+  <scene><instance_visual_scene url="#scene"/></scene>
+</COLLADA>"##;
+
+    #[test]
+    fn merges_collada_submeshes_with_correct_offsets() {
+        let mesh = load_mesh_from_slice(TWO_SUBMESH_DAE.as_bytes(), "two.dae").expect("loads");
+        // All vertices from both submeshes must be referenced by indices.
+        let max_idx = *mesh.indices.iter().max().expect("has indices");
+        assert_eq!(
+            max_idx as usize,
+            mesh.vertices.len() - 1,
+            "second submesh's faces must reference its own (offset) vertices"
+        );
+        // The second submesh's triangle lives at x>=5; make sure it survived.
+        let has_far_vertex = mesh
+            .indices
+            .iter()
+            .any(|&i| mesh.vertices[i as usize][0] >= 5.0);
+        assert!(
+            has_far_vertex,
+            "second submesh's geometry was lost in merge"
+        );
     }
 
     #[test]

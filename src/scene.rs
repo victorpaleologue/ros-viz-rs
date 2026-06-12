@@ -93,11 +93,7 @@ pub fn spawn_robot(
         .id();
 
     let transforms = model.link_world_transforms();
-    let default_material = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.65, 0.67, 0.7),
-        perceptual_roughness: 0.6,
-        ..default()
-    });
+    let default_material = materials.add(robot_material(Color::srgb(0.65, 0.67, 0.7)));
 
     // URDF allows top-level named materials referenced from visuals.
     let named_materials: HashMap<&str, &urdf_rs::Material> = model
@@ -244,6 +240,21 @@ pub fn loaded_to_bevy_mesh(loaded: LoadedMesh) -> Mesh {
     mesh
 }
 
+/// Standard surface settings for robot parts.
+///
+/// Robot visual meshes are frequently open shells (hollow tube ends, plain
+/// covers); rendering them single-sided punches see-through holes into the
+/// robot, so render both faces like RViz does.
+fn robot_material(color: Color) -> StandardMaterial {
+    StandardMaterial {
+        base_color: color,
+        perceptual_roughness: 0.6,
+        cull_mode: None,
+        double_sided: true,
+        ..default()
+    }
+}
+
 /// Material for a visual: inline color, named URDF material, or none.
 fn visual_material(
     visual: &urdf_rs::Visual,
@@ -256,11 +267,7 @@ fn visual_material(
         .as_ref()
         .or_else(|| named.get(material.name.as_str())?.color.as_ref())?;
     let [r, g, b, a] = color.rgba.0.map(|c| c as f32);
-    Some(materials.add(StandardMaterial {
-        base_color: Color::srgba(r, g, b, a),
-        perceptual_roughness: 0.6,
-        ..default()
-    }))
+    Some(materials.add(robot_material(Color::srgba(r, g, b, a))))
 }
 
 /// Re-pose all robots whenever [`JointPositions`] changes.
