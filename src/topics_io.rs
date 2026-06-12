@@ -31,7 +31,7 @@ use bevy::prelude::*;
 use ros2_client::{DEFAULT_PUBLISHER_QOS, DEFAULT_SUBSCRIPTION_QOS, Name, Node};
 use rustdds::QosPolicies;
 
-use crate::messages::{DynPublisher, DynSubscription, MessageRegistry};
+use crate::messages::MessageRegistry;
 use crate::ros_msgs::MessageType;
 use crate::ros_plugin::{ReadersAndWriters, RosSession, TopicInfo, TopicKind};
 
@@ -61,43 +61,7 @@ impl Plugin for TopicIOPlugin {
 // Components
 // ---------------------------------------------------------------------------
 
-/// Latest reflected value received from a ROS 2 subscription
-/// (`None` until the first message arrives).
-#[derive(Component, Debug, Clone, Default, PartialEq)]
-pub struct TopicValue(pub Option<serde_json::Value>);
-
-/// Reflected value bound to the egui editing widgets, seeded with the
-/// registry default for the topic's message type.
-#[derive(Component, Debug, Clone, Default, PartialEq)]
-pub struct TopicEdit(pub serde_json::Value);
-
-/// Type-erased subscription handle for a topic entity.
-#[derive(Component)]
-pub struct Subscription(pub Box<dyn DynSubscription>);
-
-impl std::fmt::Debug for Subscription {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("Subscription")
-            .field(&"<dyn DynSubscription>")
-            .finish()
-    }
-}
-
-/// Type-erased publisher handle for a topic entity.
-#[derive(Component)]
-pub struct Publisher(pub Box<dyn DynPublisher>);
-
-impl std::fmt::Debug for Publisher {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("Publisher")
-            .field(&"<dyn DynPublisher>")
-            .finish()
-    }
-}
-
-/// Temporary marker inserted by the UI to request a publish.
-#[derive(Component, Debug)]
-pub struct PublishRequest;
+pub use crate::topics::{PublishRequest, Publisher, Subscription, TopicEdit, TopicValue};
 
 // ---------------------------------------------------------------------------
 // Systems
@@ -258,6 +222,7 @@ pub fn setup_typed_publisher<T: MessageType>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::messages::{DynPublisher, DynSubscription};
     use serde_json::{Value, json};
     use std::sync::Mutex as StdMutex;
 

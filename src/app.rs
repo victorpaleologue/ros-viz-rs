@@ -10,23 +10,34 @@
 //!   writes it to disk — handy for headless checks of a live system.
 
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
 
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
+#[cfg(feature = "ros2")]
 use ros2_client::ros2::{
     Duration as RosDuration, QosPolicyBuilder,
     policy::{Durability, History, Reliability},
 };
+#[cfg(not(target_arch = "wasm32"))]
 use tracing_subscriber::EnvFilter;
 
 use crate::options::Options;
 use crate::robot::RobotModel;
+#[cfg(feature = "ros2")]
 use crate::robot::mesh::MeshResolver;
+#[cfg(feature = "ros2")]
 use crate::ros_msgs;
+#[cfg(feature = "ros2")]
 use crate::ros_plugin::{RosPlugin, RosSession};
-use crate::scene::{JointPositions, RobotHandle, RobotScenePlugin, spawn_robot, spawn_viewing_rig};
+#[cfg(feature = "ros2")]
+use crate::scene::{JointPositions, spawn_robot};
+use crate::scene::{RobotHandle, RobotScenePlugin, spawn_viewing_rig};
+#[cfg(not(target_arch = "wasm32"))]
 use crate::snapshot::{self, SnapshotPlugin};
+#[cfg(feature = "ros2")]
 use crate::topics_io::{TopicIOPlugin, setup_typed_subscription};
 use crate::topics_view::{TopicsPanelMode, TopicsTreePlugin};
 
@@ -35,6 +46,7 @@ use crate::topics_view::{TopicsPanelMode, TopicsTreePlugin};
 /// Created lazily once [`RosSession`] is available. Receivers are wrapped in
 /// [`std::sync::Mutex`] because subscriptions are not `Sync`, which Bevy
 /// resources require.
+#[cfg(feature = "ros2")]
 #[derive(Resource)]
 struct AppSubscriptions {
     robot_description: std::sync::Mutex<ros2_client::Subscription<ros_msgs::String>>,
@@ -42,10 +54,15 @@ struct AppSubscriptions {
 }
 
 /// A robot model received from ROS, waiting to be spawned into the scene.
+///
+/// Filled by whichever connection backend is active; only initialized (not
+/// read) when none is compiled in.
+#[cfg_attr(not(feature = "ros2"), allow(dead_code))]
 #[derive(Resource, Default)]
 struct PendingRobot(Option<Arc<RobotModel>>);
 
 /// Warns once when no description shows up within a grace period.
+#[cfg_attr(not(feature = "ros2"), allow(dead_code))]
 #[derive(Resource)]
 struct UrdfWaitTimer {
     timer: Timer,
@@ -66,13 +83,13 @@ pub fn run(options: Options) -> anyhow::Result<()> {
     init_tracing();
     tracing::info!("Starting ros-viz-rs with {options:?}");
 
+    #[cfg(not(target_arch = "wasm32"))]
     if let Some(path) = options.snapshot_to.clone() {
         let mut app = build_app(&options);
-        run_headless_snapshot(&mut app, &path, Duration::from_secs(30))
-    } else {
-        build_app(&options).run();
-        Ok(())
+        return run_headless_snapshot(&mut app, &path, Duration::from_secs(30));
     }
+    build_app(&options).run();
+    Ok(())
 }
 
 /// Build the Bevy app for the selected mode (windowed unless
@@ -83,7 +100,13 @@ pub fn build_app(options: &Options) -> App {
     app.init_resource::<PendingRobot>();
     app.init_resource::<UrdfWaitTimer>();
 
-    if options.snapshot_to.is_some() {
+    #[cfg(target_arch = "wasm32")]
+    let windowed = true;
+    #[cfg(not(target_arch = "wasm32"))]
+    let windowed = options.snapshot_to.is_none();
+
+    #[cfg(not(target_arch = "wasm32"))]
+    if !windowed {
         app.add_plugins(SnapshotPlugin {
             width: options.width,
             height: options.height,
@@ -109,7 +132,8 @@ pub fn build_app(options: &Options) -> App {
         app.add_systems(Startup, |mut commands: Commands| {
             crate::scene::spawn_lights(&mut commands);
         });
-    } else {
+    }
+    if windowed {
         app.add_plugins(DefaultPlugins.set(bevy::window::WindowPlugin {
             primary_window: Some(bevy::window::Window {
                 title: "ros-viz-rs".into(),
@@ -135,6 +159,7 @@ pub fn build_app(options: &Options) -> App {
         return app;
     }
 
+    #[cfg(feature = "ros2")]
     match RosPlugin::new(options.domain, "ros_viz_rs") {
         Ok(ros) => {
             app.add_plugins((ros, TopicIOPlugin));
@@ -153,11 +178,14 @@ pub fn build_app(options: &Options) -> App {
             tracing::error!("ROS connection unavailable: {e}");
         }
     }
+    #[cfg(not(feature = "ros2"))]
+    tracing::warn!("built without the ros2 feature: no DDS connection");
 
     app
 }
 
 /// Drive a snapshot-mode app until a robot is rendered, then write the PNG.
+#[cfg(not(target_arch = "wasm32"))]
 fn run_headless_snapshot(
     app: &mut App,
     path: &std::path::Path,
@@ -191,6 +219,7 @@ fn run_headless_snapshot(
 }
 
 /// Lazily create the typed subscriptions once [`RosSession`] exists.
+#[cfg(feature = "ros2")]
 fn setup_app_subscriptions(world: &mut World) {
     if world.get_resource::<AppSubscriptions>().is_some()
         || world.get_resource::<RosSession>().is_none()
@@ -240,6 +269,7 @@ fn setup_app_subscriptions(world: &mut World) {
 }
 
 /// Receive the URDF, parse it into a [`RobotModel`].
+#[cfg(feature = "ros2")]
 fn receive_robot_description(
     mut pending: ResMut<PendingRobot>,
     robots: Query<&RobotHandle>,
@@ -289,6 +319,7 @@ fn receive_robot_description(
 }
 
 /// Feed `/joint_states` into the scene's [`JointPositions`].
+#[cfg(feature = "ros2")]
 fn receive_joint_states(
     mut joint_positions: ResMut<JointPositions>,
     subs: Option<Res<AppSubscriptions>>,
@@ -307,6 +338,7 @@ fn receive_joint_states(
 }
 
 /// Spawn the robot scene once a model has been received.
+#[cfg(feature = "ros2")]
 fn spawn_pending_robot(
     mut commands: Commands,
     mut pending: ResMut<PendingRobot>,
@@ -334,11 +366,17 @@ fn spawn_pending_robot(
     spawn_robot(&mut commands, &mut meshes, &mut materials, model, &resolver);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn init_tracing() {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     let _ = tracing_subscriber::fmt()
         .with_env_filter(env_filter)
         .try_init();
+}
+
+#[cfg(target_arch = "wasm32")]
+fn init_tracing() {
+    // Bevy's LogPlugin routes tracing to the browser console on wasm.
 }
 
 #[cfg(test)]

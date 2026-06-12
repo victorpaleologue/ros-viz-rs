@@ -20,8 +20,8 @@ use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use serde_json::Value;
 
 use crate::messages::MessageRegistry;
-use crate::ros_plugin::TopicInfo;
-use crate::topics_io::{PublishRequest, Publisher, Subscription, TopicEdit, TopicValue};
+use crate::topics::TopicInfo;
+use crate::topics::{PublishRequest, Publisher, Subscription, TopicEdit, TopicValue};
 
 // ---------------------------------------------------------------------------
 // Traits
@@ -584,7 +584,7 @@ fn render_scalar_edit(ui: &mut egui::Ui, id: egui::Id, value: &mut Value) -> boo
 mod tests {
     use super::*;
     use crate::messages::{DynPublisher, DynSubscription};
-    use crate::ros_plugin::TopicKind;
+    use crate::topics::TopicKind;
     use bevy_egui::EguiFullOutput;
     use serde_json::json;
 

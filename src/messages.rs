@@ -16,14 +16,18 @@
 //! [`standard_messages!`] invocation in [`MessageRegistry::standard`].
 
 use std::collections::HashMap;
+#[cfg(feature = "ros2")]
 use std::sync::{Arc, Mutex};
 
 use bevy::prelude::Resource;
+#[cfg(feature = "ros2")]
 use ros2_client::Node;
+#[cfg(feature = "ros2")]
 use rustdds::QosPolicies;
 use serde_json::Value;
 
 use crate::ros_msgs::{self, MessageType};
+#[cfg(feature = "ros2")]
 use crate::topics_io::{setup_typed_publisher, setup_typed_subscription};
 
 // ---------------------------------------------------------------------------
@@ -45,8 +49,10 @@ pub trait DynPublisher: Send + Sync {
 
 /// Typed [`DynSubscription`] implementation wrapping a
 /// [`ros2_client::Subscription`].
+#[cfg(feature = "ros2")]
 struct TypedSubscription<T: MessageType>(ros2_client::Subscription<T>);
 
+#[cfg(feature = "ros2")]
 impl<T: MessageType> DynSubscription for TypedSubscription<T> {
     fn poll(&self) -> Option<Value> {
         let mut latest = None;
@@ -66,8 +72,10 @@ impl<T: MessageType> DynSubscription for TypedSubscription<T> {
 
 /// Typed [`DynPublisher`] implementation wrapping a
 /// [`ros2_client::Publisher`].
+#[cfg(feature = "ros2")]
 struct TypedPublisher<T: MessageType>(ros2_client::Publisher<T>);
 
+#[cfg(feature = "ros2")]
 impl<T: MessageType> DynPublisher for TypedPublisher<T> {
     fn publish(&self, value: &Value) -> Result<(), String> {
         let msg: T = serde_json::from_value(value.clone()).map_err(|e| {
@@ -87,21 +95,26 @@ impl<T: MessageType> DynPublisher for TypedPublisher<T> {
 // ---------------------------------------------------------------------------
 
 /// Factory signature for type-erased subscriptions.
+#[cfg(feature = "ros2")]
 pub type SubscribeFn =
     fn(&Arc<Mutex<Node>>, &str, Option<&QosPolicies>) -> Result<Box<dyn DynSubscription>, String>;
 
 /// Factory signature for type-erased publishers.
+#[cfg(feature = "ros2")]
 pub type MakePublisherFn =
     fn(&Arc<Mutex<Node>>, &str, Option<&QosPolicies>) -> Result<Box<dyn DynPublisher>, String>;
 
 /// Per-type vtable of monomorphized entry points.
 struct MessageVtable {
+    #[cfg(feature = "ros2")]
     subscribe: SubscribeFn,
+    #[cfg(feature = "ros2")]
     make_publisher: MakePublisherFn,
     default_value: fn() -> Value,
 }
 
 /// Monomorphized [`MessageVtable::subscribe`] entry.
+#[cfg(feature = "ros2")]
 fn subscribe_erased<T: MessageType>(
     node: &Arc<Mutex<Node>>,
     topic: &str,
@@ -112,6 +125,7 @@ fn subscribe_erased<T: MessageType>(
 }
 
 /// Monomorphized [`MessageVtable::make_publisher`] entry.
+#[cfg(feature = "ros2")]
 fn make_publisher_erased<T: MessageType>(
     node: &Arc<Mutex<Node>>,
     topic: &str,
@@ -223,7 +237,9 @@ impl MessageRegistry {
         self.entries.insert(
             T::MESSAGE_TYPE_STR,
             MessageVtable {
+                #[cfg(feature = "ros2")]
                 subscribe: subscribe_erased::<T>,
+                #[cfg(feature = "ros2")]
                 make_publisher: make_publisher_erased::<T>,
                 default_value: default_value_erased::<T>,
             },
@@ -241,6 +257,7 @@ impl MessageRegistry {
     }
 
     /// Create a type-erased subscription on `topic` for `type_name`.
+    #[cfg(feature = "ros2")]
     pub fn subscribe(
         &self,
         type_name: &str,
@@ -256,6 +273,7 @@ impl MessageRegistry {
     }
 
     /// Create a type-erased publisher on `topic` for `type_name`.
+    #[cfg(feature = "ros2")]
     pub fn make_publisher(
         &self,
         type_name: &str,
@@ -296,6 +314,7 @@ mod tests {
     use serde_json::json;
     use std::time::{Duration, Instant};
 
+    #[cfg(feature = "ros2")]
     /// Pick a random DDS domain ID in 1..=232 to isolate tests from each
     /// other and from any running ROS 2 system on domain 0.
     fn random_domain_id() -> u16 {
@@ -305,6 +324,7 @@ mod tests {
         (hash % 232 + 1) as u16
     }
 
+    #[cfg(feature = "ros2")]
     /// Create a throwaway ROS node on a random domain.
     fn test_node(name: &str) -> Arc<Mutex<Node>> {
         let domain_id = random_domain_id();
@@ -420,6 +440,7 @@ mod tests {
         assert_eq!(back, msg);
     }
 
+    #[cfg(feature = "ros2")]
     #[test]
     fn unregistered_type_errors() {
         let registry = MessageRegistry::standard();
@@ -436,6 +457,7 @@ mod tests {
         assert!(err.contains("not registered"), "got: {err}");
     }
 
+    #[cfg(feature = "ros2")]
     #[test]
     fn publisher_rejects_mismatched_value() {
         let registry = MessageRegistry::standard();
@@ -451,6 +473,7 @@ mod tests {
 
     /// Publish a reflected value and poll it back through the registry on a
     /// private DDS domain. Returns the received value.
+    #[cfg(feature = "ros2")]
     fn pub_sub_round_trip(type_name: &str, topic: &str, value: Value) -> Value {
         let registry = MessageRegistry::standard();
         let node = test_node("registry_roundtrip_node");
@@ -478,6 +501,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "ros2")]
     #[test]
     fn dds_round_trip_string() {
         crate::require_dds_multicast!();
@@ -486,6 +510,7 @@ mod tests {
         assert_eq!(received, sent);
     }
 
+    #[cfg(feature = "ros2")]
     #[test]
     fn dds_round_trip_twist() {
         crate::require_dds_multicast!();
@@ -498,6 +523,7 @@ mod tests {
         assert_eq!(received, sent);
     }
 
+    #[cfg(feature = "ros2")]
     #[test]
     fn dds_round_trip_joint_state() {
         crate::require_dds_multicast!();

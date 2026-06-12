@@ -94,50 +94,7 @@ impl std::fmt::Debug for RosSession {
 // ---------------------------------------------------------------------------
 // Components
 // ---------------------------------------------------------------------------
-/// Classification of a DDS topic based on its name prefix/pattern.
-///
-/// ROS 2 maps its concepts onto DDS using naming conventions:
-/// - `rt/…` — regular pub/sub topics
-/// - `rq/…` — service request channels
-/// - `rr/…` — service reply channels
-/// - `rt/…/_action/…` — action-related topics
-/// - anything else — unknown / internal
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub enum TopicKind {
-    /// A regular pub/sub topic, carrying the clean ROS topic name.
-    Normal(String),
-    /// A service request channel, carrying the service name.
-    ServiceRequest(String),
-    /// A service reply channel, carrying the service name.
-    ServiceReply(String),
-    /// An action-related topic, carrying the action name.
-    Action(String),
-    /// Anything that doesn't match a known pattern.
-    Unknown,
-}
-
-/// A Bevy component that represents a single topic.
-#[derive(Component, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct TopicInfo {
-    /// The full topic name (raw DDS name), e.g. `rt/robot/joint_states`.
-    pub topic_name: String,
-
-    /// The data type name of the topic, e.g. `sensor_msgs/JointState`.
-    pub type_name: String,
-
-    /// The kind of topic (normal, service, action, …).
-    pub kind: TopicKind,
-}
-
-impl TopicInfo {
-    pub fn new(name: impl Into<String>, type_name: impl Into<String>, kind: TopicKind) -> Self {
-        Self {
-            topic_name: name.into(),
-            type_name: type_name.into(),
-            kind,
-        }
-    }
-}
+pub use crate::topics::{TopicInfo, TopicKind, dds_type_to_ros_type, topic_kind_from_dds_name};
 
 /// Store the set of readers and writers (DDS endpoints) detected for a topic.
 /// Can be used to determine whether a topic is publishable/subscribable:
@@ -275,52 +232,6 @@ pub(crate) fn populate_topics(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/// Convert a DDS type name to a ROS 2 type name.
-///
-/// DDS discovery reports types like `std_msgs::msg::dds_::String_`.
-/// This function normalises them to `std_msgs/String`.
-///
-/// If the name already looks like a ROS type (`pkg/Type`), it is returned
-/// unchanged.
-pub fn dds_type_to_ros_type(dds_type: &str) -> String {
-    // Pattern: "<pkg>::msg::dds_::<Type>_"
-    let parts: Vec<&str> = dds_type.split("::").collect();
-    if parts.len() >= 4 && parts[1] == "msg" && parts[2] == "dds_" {
-        let pkg = parts[0];
-        let raw_type = parts[3];
-        // The trailing underscore is a DDS convention – strip it.
-        let type_name = raw_type.strip_suffix('_').unwrap_or(raw_type);
-        return format!("{pkg}/{type_name}");
-    }
-    // Already in ROS form or unknown – return as-is.
-    dds_type.to_owned()
-}
-
-/// Classify a raw DDS topic name into a [`TopicKind`].
-///
-/// ROS 2 maps its concepts onto DDS using naming conventions:
-/// - `rt/…` — regular pub/sub topics
-/// - `rq/…` — service request channels
-/// - `rr/…` — service reply channels
-/// - `rt/…/_action/…` — action-related topics
-pub fn topic_kind_from_dds_name(dds_name: &str) -> TopicKind {
-    if let Some(rest) = dds_name.strip_prefix("rq/") {
-        let service = rest.strip_suffix("/Request").unwrap_or(rest);
-        TopicKind::ServiceRequest(format!("/{service}"))
-    } else if let Some(rest) = dds_name.strip_prefix("rr/") {
-        let service = rest.strip_suffix("/Reply").unwrap_or(rest);
-        TopicKind::ServiceReply(format!("/{service}"))
-    } else if let Some(rest) = dds_name.strip_prefix("rt/") {
-        if let Some(idx) = rest.find("/_action/") {
-            TopicKind::Action(format!("/{}", &rest[..idx]))
-        } else {
-            TopicKind::Normal(format!("/{rest}"))
-        }
-    } else {
-        TopicKind::Unknown
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Tests

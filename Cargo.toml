@@ -19,6 +19,11 @@ depends = "$auto"
 section = "science"
 
 
+[features]
+default = ["ros2"]
+# Native DDS transport via ros2-client/rustdds. Off for wasm builds.
+ros2 = ["dep:ros2-client", "dep:rustdds", "dep:futures", "dep:async-channel"]
+
 [dependencies]
 bevy_egui = "0.39"
 anyhow = "1"
@@ -33,15 +38,15 @@ serde_json = "1"
 # encode fixed arrays as serde tuples, i.e. without a length prefix).
 serde-big-array = "0.5"
 thiserror = "1"
-ros2-client = "0.8"
-rustdds = "0.11"
+ros2-client = { version = "0.8", optional = true }
+rustdds = { version = "0.11", optional = true }
 urdf-rs = "0.9"
 k = "0.32"
 nalgebra = { version = "0.33", features = ["serde"] }
 mesh-loader = "0.1"
 image = { version = "0.24", default-features = false, features = ["png"] }
-async-channel = "2.3"
-futures = "0.3"
+async-channel = { version = "2.3", optional = true }
+futures = { version = "0.3", optional = true }
 
 [dev-dependencies]
 chrono = ">=0.4.35"

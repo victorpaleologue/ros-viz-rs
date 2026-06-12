@@ -16,7 +16,6 @@
 //! [`serde_big_array::BigArray`] because serde only derives `Deserialize`
 //! for arrays up to 32 elements.
 
-use ros2_client::builtin_interfaces::Time;
 use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
 use std::fmt::Debug;
@@ -26,27 +25,63 @@ use std::fmt::Debug;
 // ---------------------------------------------------------------------------
 
 /// A type that can be used as a ROS 2 message.
+///
+/// Transport-free: DDS-specific name types are derived from
+/// [`PACKAGE`](Self::PACKAGE)/[`TYPE_NAME`](Self::TYPE_NAME) by the `ros2`
+/// backend, and rosbridge uses [`MESSAGE_TYPE_STR`](Self::MESSAGE_TYPE_STR)
+/// directly.
 pub trait MessageType:
     Clone + Debug + Send + Sync + Serialize + serde::de::DeserializeOwned + 'static
 {
+    /// The ROS package the message belongs to, e.g. `"std_msgs"`.
+    const PACKAGE: &'static str;
+
+    /// The bare type name, e.g. `"String"`.
+    const TYPE_NAME: &'static str;
+
     /// The ROS 2 message type name in `"package/Type"` format.
     const MESSAGE_TYPE_STR: &'static str;
 
     /// Build a [`ros2_client::MessageTypeName`] for DDS topic creation.
-    fn message_type_name() -> ros2_client::MessageTypeName;
+    #[cfg(feature = "ros2")]
+    fn message_type_name() -> ros2_client::MessageTypeName {
+        ros2_client::MessageTypeName::new(Self::PACKAGE, Self::TYPE_NAME)
+    }
 }
 
 /// Implement [`MessageType`] for a struct defined in this module.
 macro_rules! impl_message_type {
     ($package:expr, $struct_name:ident) => {
         impl MessageType for $struct_name {
+            const PACKAGE: &'static str = $package;
+            const TYPE_NAME: &'static str = stringify!($struct_name);
             const MESSAGE_TYPE_STR: &'static str = concat!($package, "/", stringify!($struct_name));
-            fn message_type_name() -> ros2_client::MessageTypeName {
-                ros2_client::MessageTypeName::new($package, stringify!($struct_name))
-            }
         }
     };
 }
+
+// ====== builtin_interfaces ===============================================
+// https://github.com/ros2/rcl_interfaces/tree/rolling/builtin_interfaces
+
+/// `builtin_interfaces/Time` — same wire layout as
+/// `ros2_client::builtin_interfaces::Time` (int32 sec, uint32 nanosec),
+/// defined here so messages stay transport-free.
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Time {
+    pub sec: i32,
+    pub nanosec: u32,
+}
+
+impl Time {
+    /// Build from nanoseconds since the UNIX epoch.
+    pub fn from_nanos(nanos: i64) -> Self {
+        Self {
+            sec: (nanos / 1_000_000_000) as i32,
+            nanosec: (nanos % 1_000_000_000) as u32,
+        }
+    }
+}
+impl_message_type!("builtin_interfaces", Time);
 
 // ====== std_msgs =========================================================
 // https://github.com/ros2/common_interfaces/tree/rolling/std_msgs/msg
@@ -583,12 +618,14 @@ impl_message_type!("tf2_msgs", TFMessage);
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "ros2")]
     use rustdds::serialization::{
         RepresentationIdentifier, deserialize_from_cdr_with_rep_id, to_writer_with_rep_id,
     };
 
     /// Serialize a message to CDR (little-endian, the rustdds default) and
     /// deserialize it back; used to prove wire-format self-consistency.
+    #[cfg(feature = "ros2")]
     fn cdr_roundtrip<T: MessageType + PartialEq>(msg: &T) -> Vec<u8> {
         let mut bytes = Vec::new();
         to_writer_with_rep_id(&mut bytes, msg, RepresentationIdentifier::CDR_LE)
@@ -628,6 +665,7 @@ mod tests {
     /// TwistWithCovariance is 6 f64 (twist) + 36 f64 (covariance):
     /// 42 × 8 = 336 bytes. A `Vec<f64>` encoding would add a length prefix
     /// and padding, producing a different size.
+    #[cfg(feature = "ros2")]
     #[test]
     fn covariance_encodes_as_fixed_array() {
         let mut msg = TwistWithCovariance::default();
@@ -640,6 +678,7 @@ mod tests {
 
     /// Same check for `float64[9]` (Imu-style covariance) through
     /// MagneticField, accounting for its Header explicitly.
+    #[cfg(feature = "ros2")]
     #[test]
     fn nine_element_covariance_encodes_as_fixed_array() {
         // Imu without header noise: serialize the covariance-bearing part
@@ -662,6 +701,7 @@ mod tests {
         assert_eq!(bytes.len(), 16 + 96);
     }
 
+    #[cfg(feature = "ros2")]
     #[test]
     fn cdr_roundtrip_odometry() {
         let mut msg = Odometry {
@@ -684,6 +724,7 @@ mod tests {
         cdr_roundtrip(&msg);
     }
 
+    #[cfg(feature = "ros2")]
     #[test]
     fn cdr_roundtrip_tf_message() {
         let msg = TFMessage {
@@ -710,6 +751,7 @@ mod tests {
         cdr_roundtrip(&msg);
     }
 
+    #[cfg(feature = "ros2")]
     #[test]
     fn cdr_roundtrip_joint_state() {
         let msg = JointState {
@@ -722,6 +764,7 @@ mod tests {
         cdr_roundtrip(&msg);
     }
 
+    #[cfg(feature = "ros2")]
     #[test]
     fn cdr_roundtrip_misc_types() {
         cdr_roundtrip(&String {
