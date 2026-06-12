@@ -1,5 +1,8 @@
-# Builds and publishes release artifacts when a vX.Y.Z tag lands
-# (tags are created automatically by tag-release.yml).
+# Tags main with vX.Y.Z from Cargo.toml and publishes release artifacts in
+# one workflow: tags pushed with GITHUB_TOKEN cannot trigger other workflows
+# (GitHub's recursion guard), so tagging and releasing must share a run.
+# The version-bump gate in ci.yml guarantees each merged PR carries a fresh
+# version, hence one tag per merge.
 #
 # Publishing steps that need maintainer-provided secrets are
 # continue-on-error so the GitHub release itself always completes:
@@ -9,7 +12,13 @@ name: Release
 
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+  # Manual (re)build of artifacts for an existing tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing vX.Y.Z tag to (re)build artifacts for"
+        required: true
 
 permissions:
   contents: write
@@ -18,7 +27,39 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  tag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      created: ${{ steps.tag.outputs.created }}
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag the Cargo.toml version if new
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "created=true" >> "$GITHUB_OUTPUT"
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)
+          tag="v$version"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if git ls-remote --tags origin "refs/tags/$tag" | grep -q "refs/tags/$tag"; then
+            echo "Tag $tag already exists; skipping release."
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "Release $tag"
+          git push origin "$tag"
+          echo "created=true" >> "$GITHUB_OUTPUT"
+
   github-release:
+    needs: tag
+    if: needs.tag.outputs.created == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -26,39 +67,49 @@ jobs:
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.tag.outputs.tag }}
         run: |
-          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || \
-            gh release create "$GITHUB_REF_NAME" --generate-notes
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" --generate-notes
 
   crates-io:
+    needs: tag
+    if: needs.tag.outputs.created == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # Will fail until CARGO_REGISTRY_TOKEN is configured in repo secrets.
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
       - name: Install Bevy system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev libudev-dev pkg-config
+          sudo apt-get install -y libasound2-dev libudev-dev pkg-config libwayland-dev libxkbcommon-dev
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Publish to crates.io
         run: cargo publish --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
 
   macos-app:
-    needs: github-release
+    needs: [tag, github-release]
+    if: needs.tag.outputs.created == 'true'
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build release binary
         run: cargo build --release
       - name: Bundle .app and .dmg
+        env:
+          TAG: ${{ needs.tag.outputs.tag }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${TAG#v}"
           app="ros-viz-rs.app"
           mkdir -p "$app/Contents/MacOS"
           cp target/release/ros-viz-rs "$app/Contents/MacOS/ros-viz-rs"
@@ -81,18 +132,22 @@ jobs:
       - name: Upload to release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" ros-viz-rs-*.dmg --clobber
+          TAG: ${{ needs.tag.outputs.tag }}
+        run: gh release upload "$TAG" ros-viz-rs-*.dmg --clobber
 
   linux-deb:
-    needs: github-release
+    needs: [tag, github-release]
+    if: needs.tag.outputs.created == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
       - name: Install Bevy system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev libudev-dev pkg-config
+          sudo apt-get install -y libasound2-dev libudev-dev pkg-config libwayland-dev libxkbcommon-dev
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build .deb
@@ -102,14 +157,18 @@ jobs:
       - name: Upload to release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" target/debian/*.deb --clobber
+          TAG: ${{ needs.tag.outputs.tag }}
+        run: gh release upload "$TAG" target/debian/*.deb --clobber
 
   windows-exe:
-    needs: github-release
+    needs: [tag, github-release]
+    if: needs.tag.outputs.created == 'true'
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build release binary
@@ -118,7 +177,8 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.tag.outputs.tag }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${TAG#v}"
           cp target/release/ros-viz-rs.exe "ros-viz-rs-$version-windows-x86_64.exe"
-          gh release upload "$GITHUB_REF_NAME" "ros-viz-rs-$version-windows-x86_64.exe" --clobber
+          gh release upload "$TAG" "ros-viz-rs-$version-windows-x86_64.exe" --clobber
