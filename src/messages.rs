@@ -13,7 +13,7 @@
 //!
 //! Supporting a new message type therefore takes two steps: define the serde
 //! struct in [`crate::ros_msgs`] and add one line to the
-//! [`standard_messages!`] invocation in [`MessageRegistry::standard`].
+//! `standard_messages!` invocation in [`MessageRegistry::standard`].
 
 use std::collections::HashMap;
 #[cfg(feature = "ros2")]

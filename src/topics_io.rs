@@ -1,8 +1,8 @@
 //! Automatic ROS 2 subscription / publication for discovered topics.
 //!
-//! When a topic is discovered as subscribable ([`ReadersAndWriters::is_subscribable`]), this module
+//! When a topic is discovered as subscribable (`ReadersAndWriters::is_subscribable`), this module
 //! creates a ROS 2 **subscriber** and attaches [`Subscription`] + [`TopicValue`] components.
-//! When a topic is discovered as publishable ([`ReadersAndWriters::is_publishable`]), it creates a
+//! When a topic is discovered as publishable (`ReadersAndWriters::is_publishable`), it creates a
 //! ROS 2 **publisher** and attaches [`Publisher`] + [`TopicEdit`] components.
 //!
 //! Message types are resolved through the [`MessageRegistry`] resource:

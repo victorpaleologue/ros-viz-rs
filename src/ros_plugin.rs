@@ -2,11 +2,10 @@
 //!
 //! This module is only compiled when the `ros` feature is enabled.
 //!
-//! The main entry point is [`RosDiscoveryPlugin`], which registers the
-//! [`poll_discovered_topics`] system.  That system periodically calls
-//! [`Context::discovered_topics()`](ros2_client::Context::discovered_topics)
-//! and reconciles the result with the set of [`TopicInfo`] entities in the
-//! world.
+//! The main entry point is [`RosPlugin`], which owns the DDS context, node
+//! and spinner, and registers [`populate_topics`]: that system drains DDS
+//! discovery events and reconciles them with the set of [`TopicInfo`]
+//! entities in the world.
 
 use std::collections::HashSet;
 use std::sync::Arc;
