@@ -4,7 +4,9 @@ A generic ROS 2 robot visualizer in Rust, built on [Bevy](https://bevy.org)
 and [egui](https://github.com/emilk/egui).
 
 Because it speaks DDS directly (no rclcpp, no ROS installation), it runs
-anywhere Rust runs — macOS, Windows, Linux, and (in progress) the browser.
+anywhere Rust runs — macOS, Windows, Linux — and in the browser via
+rosbridge: **[live demo](https://victorpaleologue.github.io/ros-viz-rs/)**
+(a NAO waving hello, compiled to WebAssembly).
 
 ![UR5e rendered by ros-viz-rs](docs/images/ur5e_posed.png)
 
@@ -36,6 +38,12 @@ cargo run -- --package my_robot_description=/path/to/package
 
 # Headless snapshot of a live robot (no window opens)
 cargo run -- --snapshot-to robot.png
+
+# No robot around? Watch the embedded NAO wave
+cargo run -- --demo
+
+# Or connect through a rosbridge server instead of DDS
+cargo run -- --rosbridge ws://localhost:9090
 
 # View a URDF file directly, no ROS at all
 cargo run --example urdf_view -- test-data/urdf/simple_arm.urdf
