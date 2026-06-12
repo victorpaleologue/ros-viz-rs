@@ -182,3 +182,33 @@ jobs:
           version="${TAG#v}"
           cp target/release/ros-viz-rs.exe "ros-viz-rs-$version-windows-x86_64.exe"
           gh release upload "$TAG" "ros-viz-rs-$version-windows-x86_64.exe" --clobber
+
+  npm:
+    needs: tag
+    if: needs.tag.outputs.created == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    # Will fail until NPM_TOKEN is configured in repo secrets.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: Build wasm package
+        run: |
+          cargo install wasm-pack --locked
+          wasm-pack build --target web --out-dir web/pkg -- \
+            --no-default-features --features rosbridge
+      - name: Publish to npm
+        working-directory: web/pkg
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
