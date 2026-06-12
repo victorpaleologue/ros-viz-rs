@@ -5,21 +5,25 @@ edition = "2024"
 
 
 [dependencies]
-bevy_egui = "0.33"
+bevy_egui = "0.39"
 anyhow = "1"
 clap = { version = "4.5", features = ["derive", "env"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
-bevy = { version = "0.15", default-features = true }
+bevy = "0.18"
 serde = { version = "1", features = ["derive"] }
 thiserror = "1"
 ros2-client = "0.8"
+rustdds = "0.11"
 urdf-rs = "0.9"
 k = "0.32"
 nalgebra = { version = "0.33", features = ["serde"] }
 mesh-loader = "0.1"
 image = { version = "0.24", default-features = false, features = ["png"] }
+async-channel = "2.3"
+futures = "0.3"
 tokio = { version = "1.48.0", features = ["macros", "rt", "rt-multi-thread"] }
 
 [dev-dependencies]
+chrono = ">=0.4.35"
 tempfile = "3"

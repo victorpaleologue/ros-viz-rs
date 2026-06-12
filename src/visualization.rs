@@ -222,9 +222,10 @@ pub fn setup_lighting(commands: &mut Commands) {
         Transform::from_xyz(-2.0, 3.0, 2.0),
     ));
 
-    commands.insert_resource(AmbientLight {
+    commands.spawn(AmbientLight {
         color: Color::WHITE,
         brightness: 300.0,
+        affects_lightmapped_meshes: true,
     });
 }
 
@@ -258,7 +259,7 @@ impl SnapshotConfig {
 pub fn capture_and_exit_system(
     mut commands: Commands,
     mut config: ResMut<SnapshotConfig>,
-    mut app_exit: EventWriter<AppExit>,
+    mut app_exit: MessageWriter<AppExit>,
 ) {
     config.frame_count += 1;
 
@@ -278,7 +279,7 @@ pub fn capture_and_exit_system(
 
     // Exit after screenshot
     if config.frame_count >= 15 && config.screenshot_requested {
-        app_exit.send(AppExit::Success);
+        app_exit.write(AppExit::Success);
     }
 }
 
@@ -297,7 +298,7 @@ pub fn create_urdf_view_app(
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
             title: window_title,
-            resolution: (800.0, 600.0).into(),
+            resolution: (800u32, 600u32).into(),
             visible: !is_snapshot,     // Hide window for snapshots
             decorations: !is_snapshot, // No decorations for snapshots
             ..default()

@@ -65,7 +65,7 @@ examples/
 - Be autonomous: follow CURRENT_PLAN.md and make progress independently
 - Plan ahead to avoid local traps; support pausing/resuming by keeping plan and docs fresh
 - Unless you stumble on a problem, go on with the plan automatically. Do not stop at every step
-- Test thoroughly before presenting results to the user
+- Test thoroughly before presenting results to the user: that means writing tests, running them with `cargo test`, and validating outputs (e.g. images) manually when needed.
 - Use visual regression tests to validate skeleton rendering
 - Keep code factorized and reusable (see src/visualization.rs module)
 - Do not use `structopt` or `kiss3d`; prefer `clap` and Bevy

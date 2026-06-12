@@ -1,10 +1,9 @@
 pub mod app;
 pub mod emulator;
 pub mod options;
-pub mod ros;
-pub mod ros2_msgs;
-pub mod ros_systems;
-pub mod topic_io;
+pub mod ros_msgs;
+pub mod ros_plugin;
+pub mod topics_io;
 pub mod topics_view;
 pub mod urdf;
 pub mod visualization;

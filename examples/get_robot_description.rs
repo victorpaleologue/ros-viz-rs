@@ -93,7 +93,7 @@ async fn main() -> Result<()> {
                             println!("Full content:\n{msg}\n");
                         }
                     } else {
-                        return Err(Error::msg(format!("⚠ Content doesn't look like URDF XML")));
+                        return Err(Error::msg("⚠ Content doesn't look like URDF XML"));
                     }
 
                     println!("\n✓ Test completed successfully!");

@@ -39,6 +39,7 @@ const VISUAL_TESTS: &[VisualTest] = &[
 const MAX_DIFF_THRESHOLD: f64 = 0.001; // 0.1% difference allowed
 
 #[test]
+#[ignore = "requires a windowed app (macOS main thread + GPU)"]
 fn visual_regression_tests() -> Result<()> {
     // Check if ImageMagick is available
     if !is_imagemagick_available() {
@@ -139,7 +140,7 @@ struct RenderResult {
 
 fn compare_images(reference: &str, generated: &Path, diff_output: &Path) -> Result<f64> {
     let output = Command::new("magick")
-        .args(&[
+        .args([
             "compare",
             "-metric",
             "RMSE",
@@ -162,13 +163,11 @@ fn compare_images(reference: &str, generated: &Path, diff_output: &Path) -> Resu
 fn parse_rmse(stderr: &str) -> Result<f64> {
     // Example output: "1234.56 (0.0123)"
     // We want the value in parentheses (normalized difference)
-    if let Some(start) = stderr.find('(') {
-        if let Some(end) = stderr.find(')') {
-            let diff_str = &stderr[start + 1..end];
-            return diff_str
-                .parse::<f64>()
-                .map_err(|e| anyhow::anyhow!("Failed to parse RMSE: {}", e));
-        }
+    if let (Some(start), Some(end)) = (stderr.find('('), stderr.find(')')) {
+        let diff_str = &stderr[start + 1..end];
+        return diff_str
+            .parse::<f64>()
+            .map_err(|e| anyhow::anyhow!("Failed to parse RMSE: {}", e));
     }
 
     Err(anyhow::anyhow!("Could not parse RMSE from: {}", stderr))

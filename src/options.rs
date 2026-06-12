@@ -1,9 +1,10 @@
 use std::path::PathBuf;
 
-use bevy::ecs::system::Resource;
+use bevy::prelude::*;
+
 use clap::Parser;
 
-const DEFAULT_ROS_DOMAIN_ID: u32 = 0;
+const DEFAULT_ROS_DOMAIN_ID: u16 = 0;
 const DEFAULT_WIDTH: u32 = 800;
 const DEFAULT_HEIGHT: u32 = 600;
 
@@ -17,7 +18,7 @@ const DEFAULT_HEIGHT: u32 = 600;
 pub struct Options {
     /// ROS domain to join. Overrides ROS_DOMAIN_ID when provided.
     #[arg(long, env = "ROS_DOMAIN_ID", value_name = "ID", default_value_t = DEFAULT_ROS_DOMAIN_ID)]
-    pub domain: u32,
+    pub domain: u16,
 
     /// URDF visualization. If set, ROS is not used.
     #[arg(long, value_name = "PATH")]

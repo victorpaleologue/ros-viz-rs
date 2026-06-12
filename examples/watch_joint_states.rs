@@ -3,16 +3,12 @@ use std::env;
 use anyhow::{Error, Result};
 use bevy::tasks::futures_lite::StreamExt;
 use ros2_client::builtin_interfaces::Time;
-use ros2_client::{
-    Context, MessageTypeName, Name, NodeName, NodeOptions,
-    ros2::{QosPolicies, policy::Durability},
-};
+use ros2_client::{Context, MessageTypeName, Name, NodeName, NodeOptions};
 use ros2_client::{ContextOptions, DEFAULT_SUBSCRIPTION_QOS};
 use serde::{Deserialize, Serialize};
 
 trait MessageType {
     fn message_type_name() -> MessageTypeName;
-    const MESSAGE_TYPE_STR: &'static str;
 }
 
 /// Associate message type to ROS2 message structs.
@@ -25,7 +21,6 @@ macro_rules! impl_message_type {
             fn message_type_name() -> MessageTypeName {
                 MessageTypeName::new($package, stringify!($struct_name))
             }
-            const MESSAGE_TYPE_STR: &'static str = concat!($package, "/", stringify!($struct_name));
         }
     };
 }
@@ -81,27 +76,20 @@ async fn main() -> Result<()> {
     // Create subscription
     let subscription = node.create_subscription::<JointState>(&topic, None)?;
 
-    let node_spinner = node.spinner()?;
-
     println!("Waiting for /joint_states messages...");
     println!("Press Ctrl+C to exit\n");
-
-    let spinning = node_spinner.spin();
-    tokio::pin!(spinning);
 
     let as_stream = subscription.async_stream();
     tokio::pin!(as_stream);
 
     loop {
-        tokio::select! {
-            // _ = &mut spinning => return Err(Error::msg("ROS node spin stopped")),
-            // Try to take a message
-            Some(res) = as_stream.next() => {
-                match res {
-                    Ok((msg, _info)) => println!("Robot State: \n{msg:?}"),
-                    Err(err) => return Err(Error::msg(format!(
+        if let Some(res) = as_stream.next().await {
+            match res {
+                Ok((msg, _info)) => println!("Robot State: \n{msg:?}"),
+                Err(err) => {
+                    return Err(Error::msg(format!(
                         "Error reading /robot_description: {err:?}"
-                    ))),
+                    )));
                 }
             }
         }

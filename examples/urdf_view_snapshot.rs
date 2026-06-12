@@ -46,7 +46,7 @@ fn main() -> Result<()> {
                     "URDF Test: {}",
                     Path::new(urdf_path).file_name().unwrap().to_string_lossy()
                 ),
-                resolution: (800.0, 600.0).into(),
+                resolution: (800u32, 600u32).into(),
                 ..default()
             }),
             ..default()
@@ -94,7 +94,7 @@ fn setup_scene(
 fn capture_and_exit(
     mut commands: Commands,
     mut config: ResMut<UrdfTestConfig>,
-    mut app_exit: EventWriter<AppExit>,
+    mut app_exit: MessageWriter<AppExit>,
 ) {
     config.frame_count += 1;
 
@@ -115,6 +115,6 @@ fn capture_and_exit(
 
     // Exit after screenshot
     if config.frame_count >= 15 && config.screenshot_requested {
-        app_exit.send(AppExit::Success);
+        app_exit.write(AppExit::Success);
     }
 }
