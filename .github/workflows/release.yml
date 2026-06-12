@@ -171,6 +171,15 @@ jobs:
           ref: ${{ needs.tag.outputs.tag }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      # rustdds -> pnet needs the Npcap SDK's Packet.lib to link on Windows
+      # (https://github.com/libpnet/libpnet#windows). Runtime DDS interface
+      # enumeration also wants Npcap installed on the user's machine.
+      - name: Install Npcap SDK
+        shell: bash
+        run: |
+          curl -sLO https://npcap.com/dist/npcap-sdk-1.13.zip
+          unzip -q npcap-sdk-1.13.zip -d npcap-sdk
+          echo "LIB=${GITHUB_WORKSPACE}\\npcap-sdk\\Lib\\x64" >> "$GITHUB_ENV"
       - name: Build release binary
         run: cargo build --release
       - name: Upload to release
