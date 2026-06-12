@@ -8,7 +8,7 @@ const DEFAULT_ROS_DOMAIN_ID: u16 = 0;
 const DEFAULT_WIDTH: u32 = 800;
 const DEFAULT_HEIGHT: u32 = 600;
 
-/// Command-line interface. Uses clap with env fallback; see https://docs.rs/clap/latest/clap/_tutorial/index.html
+/// Command-line interface. Uses clap with env fallback; see <https://docs.rs/clap/latest/clap/_tutorial/index.html>
 #[derive(Debug, Default, Clone, Parser, Resource, PartialEq, Eq)]
 #[command(
     name = "ros-viz-rs",

@@ -15,7 +15,7 @@
 //! | Component | Meaning |
 //! |---|---|
 //! | [`TopicInfo`] | Discovered topic, with name and type |
-//! | [`ReadersAndWriters`] | Readers/writers already present on the network for this topic |
+//! | `ReadersAndWriters` | Readers/writers already present on the network for this topic |
 //! | [`Subscription`] | Type-erased subscription we set up when a topic is subscribable |
 //! | [`Publisher`] | Type-erased publisher we set up when a topic is publishable |
 //! | [`TopicValue`] | Latest reflected value received from our subscription |

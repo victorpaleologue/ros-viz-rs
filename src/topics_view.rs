@@ -165,7 +165,7 @@ const WARN_COLOR: egui::Color32 = egui::Color32::from_rgb(200, 160, 80);
 
 /// Bevy system that renders the topics tree as an egui panel.
 ///
-/// It queries all [`TopicInfo`] entities, builds a [`TopicTreeNode`]
+/// It queries all [`TopicInfo`] entities, builds a `TopicTreeNode`
 /// hierarchy, and renders it using collapsible headers.
 ///
 /// For topics with an active [`Subscription`] the latest reflected value

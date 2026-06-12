@@ -3,7 +3,7 @@
 //! This module is only compiled when the `ros` feature is enabled.
 //!
 //! The main entry point is [`RosPlugin`], which owns the DDS context, node
-//! and spinner, and registers [`populate_topics`]: that system drains DDS
+//! and spinner, and registers `populate_topics`: that system drains DDS
 //! discovery events and reconciles them with the set of [`TopicInfo`]
 //! entities in the world.
 
