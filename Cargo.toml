@@ -12,6 +12,11 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 bevy = "0.18"
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# serde derives Deserialize for arrays only up to 32 elements; ROS covariance
+# fields are float64[36], so BigArray fills the gap (CDR-compatible: both
+# encode fixed arrays as serde tuples, i.e. without a length prefix).
+serde-big-array = "0.5"
 thiserror = "1"
 ros2-client = "0.8"
 rustdds = "0.11"
@@ -22,8 +27,9 @@ mesh-loader = "0.1"
 image = { version = "0.24", default-features = false, features = ["png"] }
 async-channel = "2.3"
 futures = "0.3"
-tokio = { version = "1.48.0", features = ["macros", "rt", "rt-multi-thread"] }
 
 [dev-dependencies]
 chrono = ">=0.4.35"
 tempfile = "3"
+# Only examples use an async runtime; the library itself is sync.
+tokio = { version = "1.48.0", features = ["macros", "rt", "rt-multi-thread"] }

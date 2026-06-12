@@ -1,13 +1,14 @@
 //! Automatic ROS 2 subscription / publication for discovered topics.
 //!
 //! When a topic is discovered as subscribable ([`ReadersAndWriters::is_subscribable`]), this module
-//! creates a ROS 2 **subscriber** and attaches a [`TopicLatestValue`] component.
+//! creates a ROS 2 **subscriber** and attaches [`Subscription`] + [`TopicValue`] components.
 //! When a topic is discovered as publishable ([`ReadersAndWriters::is_publishable`]), it creates a
-//! ROS 2 **publisher** and attaches a [`TopicEditBuffer`] component.
+//! ROS 2 **publisher** and attaches [`Publisher`] + [`TopicEdit`] components.
 //!
-//! Currently only `std_msgs/String` is handled – other types are silently
-//! skipped.  Adding a new type only requires extending the `match` arms in
-//! [`setup_subscription`] and [`setup_publisher`].
+//! Message types are resolved through the [`MessageRegistry`] resource:
+//! values flow as reflected [`serde_json::Value`] trees, so this module knows
+//! nothing about concrete message structs. Adding a new type only requires
+//! registering it in [`MessageRegistry::standard`].
 //!
 //! # ECS layout
 //!
@@ -15,16 +16,14 @@
 //! |---|---|
 //! | [`TopicInfo`] | Discovered topic, with name and type |
 //! | [`ReadersAndWriters`] | Readers/writers already present on the network for this topic |
-//! | [`Subscription`]   | Subscription we set up when a topic is subscribable |
-//! | [`Publisher`]    | Publisher we set up when a topic is publishable |
-//! | [`TopicLatestValue`] | Latest value received from our subscription |
-//! | [`TopicEditBuffer`]  | Text the user is typing in the egui field |
-//!
-//! The presence of [`TopicLatestValue`] or [`TopicEditBuffer`] on an entity
-//! means it has been set up ("managed").
+//! | [`Subscription`] | Type-erased subscription we set up when a topic is subscribable |
+//! | [`Publisher`] | Type-erased publisher we set up when a topic is publishable |
+//! | [`TopicValue`] | Latest reflected value received from our subscription |
+//! | [`TopicEdit`] | Reflected value the user is editing in the egui widgets |
 //!
 //! The actual `ros2_client` subscription / publisher handles live inside the
-//! [`RosNode`] resource (behind `Arc<Mutex<…>>`), keyed by topic name.
+//! type-erased boxes; the node itself sits in the [`RosSession`] resource
+//! (behind `Arc<Mutex<…>>`).
 use std::sync::{Arc, Mutex};
 
 use bevy::prelude::*;
@@ -32,7 +31,8 @@ use bevy::prelude::*;
 use ros2_client::{DEFAULT_PUBLISHER_QOS, DEFAULT_SUBSCRIPTION_QOS, Name, Node};
 use rustdds::QosPolicies;
 
-use crate::ros_msgs::{self, MessageType};
+use crate::messages::{DynPublisher, DynSubscription, MessageRegistry};
+use crate::ros_msgs::MessageType;
 use crate::ros_plugin::{ReadersAndWriters, RosSession, TopicInfo, TopicKind};
 
 // ---------------------------------------------------------------------------
@@ -44,6 +44,7 @@ pub struct TopicIOPlugin;
 
 impl Plugin for TopicIOPlugin {
     fn build(&self, app: &mut App) {
+        app.init_resource::<MessageRegistry>();
         app.add_systems(
             Update,
             (
@@ -60,67 +61,56 @@ impl Plugin for TopicIOPlugin {
 // Components
 // ---------------------------------------------------------------------------
 
-/// Latest value received from a ROS 2 subscription, as a display string.
-#[derive(Component, Debug, Clone, Default, PartialEq, Eq)]
-pub enum TopicLatestValue {
-    #[default]
-    None,
-    String(String),
-    // Add more types here.
-}
+/// Latest reflected value received from a ROS 2 subscription
+/// (`None` until the first message arrives).
+#[derive(Component, Debug, Clone, Default, PartialEq)]
+pub struct TopicValue(pub Option<serde_json::Value>);
 
-/// Editing buffer bound to the egui text input.
-#[derive(Component, Default, Debug, Clone)]
-pub enum TopicEditBuffer {
-    #[default]
-    None,
-    String(String),
-}
+/// Reflected value bound to the egui editing widgets, seeded with the
+/// registry default for the topic's message type.
+#[derive(Component, Debug, Clone, Default, PartialEq)]
+pub struct TopicEdit(pub serde_json::Value);
 
+/// Type-erased subscription handle for a topic entity.
 #[derive(Component)]
-pub enum Subscription {
-    String(ros2_client::Subscription<ros_msgs::String>), // Add more types here.
-}
+pub struct Subscription(pub Box<dyn DynSubscription>);
 
 impl std::fmt::Debug for Subscription {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Subscription::String(_) => f
-                .debug_tuple("Subscription::String")
-                .field(&"<ros2_client::Subscription<ros2_msgs::String>>")
-                .finish(),
-            // Add more types here.
-        }
+        f.debug_tuple("Subscription")
+            .field(&"<dyn DynSubscription>")
+            .finish()
     }
 }
 
+/// Type-erased publisher handle for a topic entity.
 #[derive(Component)]
-pub enum Publisher {
-    String(ros2_client::Publisher<ros_msgs::String>), // Add more types here.
-}
+pub struct Publisher(pub Box<dyn DynPublisher>);
 
 impl std::fmt::Debug for Publisher {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Publisher::String(_) => f
-                .debug_tuple("Publisher::String")
-                .field(&"<ros2_client::Publisher<ros2_msgs::String>>")
-                .finish(),
-            // Add more types here.
-        }
+        f.debug_tuple("Publisher")
+            .field(&"<dyn DynPublisher>")
+            .finish()
     }
 }
+
+/// Temporary marker inserted by the UI to request a publish.
+#[derive(Component, Debug)]
+pub struct PublishRequest;
 
 // ---------------------------------------------------------------------------
 // Systems
 // ---------------------------------------------------------------------------
-/// For every subscribable [`TopicInfo`] entity without a [`TopicLatestValue`],
+/// For every subscribable [`TopicInfo`] entity without a [`Subscription`],
 /// set up a subscription.  For every publishable entity without a
-/// [`TopicEditBuffer`], set up a publisher.
+/// [`Publisher`], set up a publisher.  Types absent from the
+/// [`MessageRegistry`] are skipped (the UI reports them as unsupported).
 #[allow(clippy::type_complexity)]
 pub(crate) fn auto_manage_topics(
     mut commands: Commands,
     ros_session: ResMut<RosSession>,
+    registry: Res<MessageRegistry>,
     topics: Query<(
         Entity,
         &TopicInfo,
@@ -134,16 +124,40 @@ pub(crate) fn auto_manage_topics(
         let TopicKind::Normal(ros_topic_name) = &info.kind else {
             continue; // only manage "normal" topics for now
         };
+        if !registry.contains(&info.type_name) {
+            tracing::debug!("No registered handler for type '{}'", info.type_name);
+            continue;
+        }
 
         // No publisher setup yet.
         if rs_and_ws.is_publishable() && has_publisher.is_none() {
-            setup_publisher(&mut commands, entity, node, ros_topic_name, &info.type_name);
-            commands.entity(entity).insert(TopicEditBuffer::default());
+            match registry.make_publisher(&info.type_name, node, ros_topic_name, None) {
+                Ok(publisher) => {
+                    let seed = registry
+                        .default_value(&info.type_name)
+                        .unwrap_or(serde_json::Value::Null);
+                    commands
+                        .entity(entity)
+                        .insert((Publisher(publisher), TopicEdit(seed)));
+                }
+                Err(e) => {
+                    tracing::error!("Failed to setup publisher for '{ros_topic_name}': {e}");
+                }
+            }
         }
 
         // No subscription setup yet.
         if rs_and_ws.is_subscribable() && has_subscription.is_none() {
-            setup_subscription(&mut commands, entity, node, ros_topic_name, &info.type_name);
+            match registry.subscribe(&info.type_name, node, ros_topic_name, None) {
+                Ok(subscription) => {
+                    commands
+                        .entity(entity)
+                        .insert((Subscription(subscription), TopicValue::default()));
+                }
+                Err(e) => {
+                    tracing::error!("Failed to setup subscription for '{ros_topic_name}': {e}");
+                }
+            }
         }
 
         // Topic not publishable anymore.
@@ -151,7 +165,7 @@ pub(crate) fn auto_manage_topics(
             commands
                 .entity(entity)
                 .remove::<Publisher>()
-                .remove::<TopicEditBuffer>();
+                .remove::<TopicEdit>();
         }
 
         // Topic not subscribable anymore.
@@ -159,102 +173,44 @@ pub(crate) fn auto_manage_topics(
             commands
                 .entity(entity)
                 .remove::<Subscription>()
-                .remove::<TopicLatestValue>();
+                .remove::<TopicValue>();
         }
     }
 }
 
-/// Drain subscription receivers and update [`TopicLatestValue`] on the
-/// corresponding entities.
-pub fn poll_subscription_values(mut topics: Query<(&Subscription, &mut TopicLatestValue)>) {
+/// Drain subscriptions and update [`TopicValue`] on the corresponding
+/// entities with the latest reflected message.
+pub fn poll_subscription_values(mut topics: Query<(&Subscription, &mut TopicValue)>) {
     for (subscription, mut latest) in topics.iter_mut() {
-        match subscription {
-            Subscription::String(handle) => {
-                while let Ok(Some((msg, _))) = handle.take() {
-                    *latest = TopicLatestValue::String(msg.data);
-                }
-            } // Add more types here.
+        if let Some(value) = subscription.0.poll() {
+            latest.0 = Some(value);
         }
     }
 }
 
-/// Publish the contents of [`TopicEditBuffer`] when signalled by the UI.
+/// Publish the contents of [`TopicEdit`] when signalled by the UI.
 ///
-/// The UI sets `TopicEditBuffer` and then inserts a [`PublishRequest`] marker
+/// The UI edits `TopicEdit` and then inserts a [`PublishRequest`] marker
 /// component.  This system picks those up, sends the value, and removes the
 /// marker.
 pub fn handle_publish_requests(
     mut commands: Commands,
-    mut requests: Query<
-        (Entity, &TopicInfo, &TopicEditBuffer, &mut Publisher),
-        With<PublishRequest>,
-    >,
+    requests: Query<(Entity, &TopicInfo, &TopicEdit, &Publisher), With<PublishRequest>>,
 ) {
-    for (entity, info, buf, mut publisher) in requests.iter_mut() {
-        match (&mut *publisher, buf) {
-            (Publisher::String(publisher), TopicEditBuffer::String(s)) => {
-                let msg = ros_msgs::String { data: s.clone() };
-                if let Err(e) = publisher.publish(msg) {
-                    tracing::error!("Failed to publish on '{}': {e}", info.topic_name);
-                }
-            }
-            // Add more types here.
-            // Cover mismatches between publisher type and buffer type, and report them as errors.
-            (_, _) => {
-                tracing::error!(
-                    "Topic '{}' has a publisher of type {:?} but the edit buffer is of type {:?}",
-                    info.topic_name,
-                    buf,
-                    publisher
-                );
-            }
+    for (entity, info, edit, publisher) in requests.iter() {
+        if let Err(e) = publisher.0.publish(&edit.0) {
+            tracing::error!("Failed to publish on '{}': {e}", info.topic_name);
         }
         commands.entity(entity).remove::<PublishRequest>();
     }
 }
 
-/// Temporary marker inserted by the UI to request a publish.
-#[derive(Component, Debug)]
-pub struct PublishRequest;
-
 // ---------------------------------------------------------------------------
 // Subscription / publisher setup helpers
 // ---------------------------------------------------------------------------
-/// Create a subscription for a supported message type and spawn a background
-/// polling thread.  Returns `true` on success.
-fn setup_subscription(
-    commands: &mut Commands,
-    entity: Entity,
-    node: &Arc<Mutex<Node>>,
-    ros_topic_name: &str,
-    type_name: &str,
-) {
-    let subscription_res = match type_name {
-        ros_msgs::String::MESSAGE_TYPE_STR => {
-            setup_typed_subscription::<ros_msgs::String>(node, ros_topic_name, None)
-                .map(Subscription::String)
-        }
-        // Add more types here:
-        // ros2_msgs::Int32::MESSAGE_TYPE_STR => { ... }
-        _ => {
-            tracing::debug!("No subscription handler for type '{type_name}'");
-            return;
-        }
-    };
 
-    if let Ok(subscription) = subscription_res {
-        commands.entity(entity).insert(subscription);
-    } else if let Err(e) = subscription_res {
-        tracing::error!(
-            "Failed to setup subscription for '{}': {}",
-            ros_topic_name,
-            e
-        );
-    }
-}
-
-/// Generic subscription setup: creates the DDS topic + subscription, spawns a
-/// polling thread that converts each received message to a `String` via `to_string`.
+/// Typed subscription setup: creates the DDS topic + subscription for a
+/// concrete message type `T`.
 pub fn setup_typed_subscription<T: MessageType>(
     node: &Arc<Mutex<Node>>,
     ros_topic_name: &str,
@@ -274,37 +230,9 @@ pub fn setup_typed_subscription<T: MessageType>(
         .map_err(|e| format!("create_subscription failed: {e:?}"))
 }
 
-/// Create a publisher for a supported message type and spawn a background
-/// publishing thread.  Returns `true` on success.
-fn setup_publisher(
-    commands: &mut Commands,
-    entity: Entity,
-    node: &Arc<Mutex<Node>>,
-    ros_topic_name: &str,
-    type_name: &str,
-) {
-    let publisher_res = match type_name {
-        ros_msgs::String::MESSAGE_TYPE_STR => {
-            setup_typed_publisher::<ros_msgs::String>(node, ros_topic_name, None)
-                .map(Publisher::String)
-        }
-        // Add more types here.
-        _ => {
-            tracing::debug!("No publisher handler for type '{type_name}'");
-            return;
-        }
-    };
-    if let Ok(publisher) = publisher_res {
-        commands.entity(entity).insert(publisher);
-    } else if let Err(e) = publisher_res {
-        tracing::error!("Failed to setup publisher for '{}': {}", ros_topic_name, e);
-    }
-}
-
-/// Generic publisher setup: creates the DDS topic + publisher, spawns a
-/// background thread that reads `String` payloads from a channel and publishes
-/// them as typed messages via `from_string`.
-pub fn setup_typed_publisher<T: MessageType + serde::Serialize>(
+/// Typed publisher setup: creates the DDS topic + publisher for a concrete
+/// message type `T`.
+pub fn setup_typed_publisher<T: MessageType>(
     node: &Arc<Mutex<Node>>,
     ros_topic_name: &str,
     qos: Option<&QosPolicies>,
@@ -321,4 +249,116 @@ pub fn setup_typed_publisher<T: MessageType + serde::Serialize>(
         .map_err(|e| format!("create_topic failed for '{ros_topic_name}': {e:?}"))?;
     node.create_publisher::<T>(&topic, None)
         .map_err(|e| format!("create_publisher failed for '{ros_topic_name}': {e:?}"))
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{Value, json};
+    use std::sync::Mutex as StdMutex;
+
+    /// Fake subscription returning a queued list of values, newest last.
+    struct FakeSubscription(StdMutex<Vec<Value>>);
+
+    impl DynSubscription for FakeSubscription {
+        fn poll(&self) -> Option<Value> {
+            self.0.lock().unwrap().pop()
+        }
+    }
+
+    /// Fake publisher recording every published value.
+    struct FakePublisher(Arc<StdMutex<Vec<Value>>>);
+
+    impl DynPublisher for FakePublisher {
+        fn publish(&self, value: &Value) -> Result<(), String> {
+            self.0.lock().unwrap().push(value.clone());
+            Ok(())
+        }
+    }
+
+    fn test_topic_info() -> TopicInfo {
+        TopicInfo::new(
+            "rt/chatter",
+            "std_msgs/String",
+            TopicKind::Normal("/chatter".into()),
+        )
+    }
+
+    #[test]
+    fn poll_updates_topic_value() {
+        let mut app = App::new();
+        app.add_systems(Update, poll_subscription_values);
+
+        let subscription = Subscription(Box::new(FakeSubscription(StdMutex::new(vec![
+            json!({"data": "hello"}),
+        ]))));
+        let entity = app
+            .world_mut()
+            .spawn((subscription, TopicValue::default()))
+            .id();
+
+        app.update();
+        assert_eq!(
+            app.world().get::<TopicValue>(entity),
+            Some(&TopicValue(Some(json!({"data": "hello"}))))
+        );
+
+        // No new message: the latest value must be kept, not cleared.
+        app.update();
+        assert_eq!(
+            app.world().get::<TopicValue>(entity),
+            Some(&TopicValue(Some(json!({"data": "hello"}))))
+        );
+    }
+
+    #[test]
+    fn publish_request_publishes_edit_buffer_and_clears_marker() {
+        let mut app = App::new();
+        app.add_systems(Update, handle_publish_requests);
+
+        let published = Arc::new(StdMutex::new(Vec::new()));
+        let entity = app
+            .world_mut()
+            .spawn((
+                test_topic_info(),
+                TopicEdit(json!({"data": "to publish"})),
+                Publisher(Box::new(FakePublisher(published.clone()))),
+                PublishRequest,
+            ))
+            .id();
+
+        app.update();
+        assert_eq!(
+            published.lock().unwrap().as_slice(),
+            &[json!({"data": "to publish"})]
+        );
+        assert!(
+            app.world().get::<PublishRequest>(entity).is_none(),
+            "PublishRequest marker must be removed"
+        );
+
+        // Without a new request, nothing further is published.
+        app.update();
+        assert_eq!(published.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn publish_without_request_does_nothing() {
+        let mut app = App::new();
+        app.add_systems(Update, handle_publish_requests);
+
+        let published = Arc::new(StdMutex::new(Vec::new()));
+        app.world_mut().spawn((
+            test_topic_info(),
+            TopicEdit(json!({"data": "idle"})),
+            Publisher(Box::new(FakePublisher(published.clone()))),
+        ));
+
+        app.update();
+        assert!(published.lock().unwrap().is_empty());
+    }
 }

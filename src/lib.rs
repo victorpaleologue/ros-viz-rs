@@ -1,5 +1,6 @@
 pub mod app;
 pub mod emulator;
+pub mod messages;
 pub mod options;
 pub mod robot;
 pub mod ros_msgs;
