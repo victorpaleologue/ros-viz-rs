@@ -1,0 +1,124 @@
+# Builds and publishes release artifacts when a vX.Y.Z tag lands
+# (tags are created automatically by tag-release.yml).
+#
+# Publishing steps that need maintainer-provided secrets are
+# continue-on-error so the GitHub release itself always completes:
+# - crates.io needs the CARGO_REGISTRY_TOKEN secret
+# - npm (wasm package) needs the NPM_TOKEN secret
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  github-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || \
+            gh release create "$GITHUB_REF_NAME" --generate-notes
+
+  crates-io:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Will fail until CARGO_REGISTRY_TOKEN is configured in repo secrets.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Bevy system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev pkg-config
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Publish to crates.io
+        run: cargo publish --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+
+  macos-app:
+    needs: github-release
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build release binary
+        run: cargo build --release
+      - name: Bundle .app and .dmg
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          app="ros-viz-rs.app"
+          mkdir -p "$app/Contents/MacOS"
+          cp target/release/ros-viz-rs "$app/Contents/MacOS/ros-viz-rs"
+          cat > "$app/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleExecutable</key><string>ros-viz-rs</string>
+            <key>CFBundleIdentifier</key><string>eu.palaio.ros-viz-rs</string>
+            <key>CFBundleName</key><string>ros-viz-rs</string>
+            <key>CFBundleShortVersionString</key><string>$version</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          PLIST
+          hdiutil create -volname "ros-viz-rs" -srcfolder "$app" -ov -format UDZO \
+            "ros-viz-rs-$version-macos-arm64.dmg"
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" ros-viz-rs-*.dmg --clobber
+
+  linux-deb:
+    needs: github-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Bevy system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev pkg-config
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build .deb
+        run: |
+          cargo install cargo-deb --locked
+          cargo deb
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" target/debian/*.deb --clobber
+
+  windows-exe:
+    needs: github-release
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build release binary
+        run: cargo build --release
+      - name: Upload to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          cp target/release/ros-viz-rs.exe "ros-viz-rs-$version-windows-x86_64.exe"
+          gh release upload "$GITHUB_REF_NAME" "ros-viz-rs-$version-windows-x86_64.exe" --clobber

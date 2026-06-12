@@ -83,10 +83,14 @@ examples/
 
 ## Current Architecture Status
 
-- `src/visualization.rs`: Shared robot visualization code (geometry, materials, spawning)
-- `src/app/mod.rs`: Main ROS2 application
-- `examples/urdf_view.rs`: Standalone URDF viewer and snapshot tool
-- `tests/visual_regression.rs`: Automated visual testing with ImageMagick
+See docs/wiki/Architecture.md for the authoritative module map. Highlights:
+
+- `src/robot/`: URDF model + forward kinematics (`k`), mesh loading — no Bevy
+- `src/scene.rs`: Bevy spawning + FK transform sync + auto-framing camera
+- `src/snapshot.rs` + `src/vision.rs`: headless GPU rendering and pure-Rust
+  image checks (no ImageMagick); references blessed via `ROS_VIZ_BLESS=1`
+- `src/emulator.rs`: fake robot over real DDS for tests/demos
+- `tests/visual_regression.rs`, `tests/ros_e2e.rs`: headless pixel tests
 
 ## Corrections and Adjustments
 

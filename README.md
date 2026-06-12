@@ -1,86 +1,87 @@
 # ros-viz-rs
 
-ROS2 robot visualizer powered by Bevy. It subscribes to `/robot_description` to build a 3D model from URDF and listens to `/joint_states` to animate the robot in real time.
+A generic ROS 2 robot visualizer in Rust, built on [Bevy](https://bevy.org)
+and [egui](https://github.com/emilk/egui).
 
-## Features
+Because it speaks DDS directly (no rclcpp, no ROS installation), it runs
+anywhere Rust runs — macOS, Windows, Linux, and (in progress) the browser.
 
-- ✅ URDF parsing with full kinematic tree extraction
-- ✅ 3D visualization with Bevy (proper joint hierarchy and transforms)
-- ✅ ROS2 subscriber client (connects to `/robot_description` and `/joint_states`)
-- ✅ Standalone URDF testing tool with image export
+![UR5e rendered by ros-viz-rs](docs/images/ur5e_posed.png)
 
-## Quick Start
+## What it does
 
-### ROS2 Visualization
+- Subscribes to `/robot_description` and renders the robot's URDF: boxes,
+  cylinders, spheres and meshes (STL/OBJ/COLLADA), with URDF materials.
+- Animates joints from `/joint_states` through proper forward kinematics
+  (the [`k`](https://crates.io/crates/k) kinematics crate).
+- Discovers every topic on the DDS graph and shows them in a tree panel,
+  with live values and editable publishing for standard message types.
+- Renders **headlessly** to PNG — no window, real GPU — for scripted checks
+  and visual regression tests (`--snapshot-to out.png`).
+- Ships a robot **emulator** that publishes a URDF and scripted joint states
+  over real DDS, so you can demo and test with zero robots around.
 
-Connect to a running ROS2 robot:
+Robots without meshes on disk degrade gracefully to a skeleton of markers:
 
-```bash
-cargo run
-```
+![NAO skeleton fallback](docs/images/nao_skeleton.png)
 
-By default, connects to ROS domain 0. Override with `--domain <id>` or `ROS_DOMAIN_ID` environment variable.
-
-### Retrieve a robot's URDF
-
-This connects to the current `ROS_DOMAIN_ID`, to read `/robot_description` and save it to the path `my_robot.urdf`.
-
-```bash
-cargo run --example get_robot_description -- my_robot.urdf
-```
-
-If you omit the destination file name, it will display the full URDF to stdout, mixed with few logs.
-
-### URDF Testing
-
-Test URDF parsing and visualization without ROS:
+## Quick start
 
 ```bash
-# View URDF interactively
-cargo run --example urdf_view test-data/urdf/simple_arm.urdf
-cargo run --example urdf_view test-data/urdf/two_link_planar.urdf
-cargo run --example urdf_view test-data/urdf/triple_pendulum.urdf
+# Visualize whatever robot lives on your ROS domain
+cargo run                       # domain 0, or ROS_DOMAIN_ID, or --domain N
 
-# Export snapshot to PNG
-cargo run --example urdf_view test-data/urdf/simple_arm.urdf --export-snapshot output.png
+# Resolve package:// mesh URIs against local directories
+cargo run -- --package my_robot_description=/path/to/package
+
+# Headless snapshot of a live robot (no window opens)
+cargo run -- --snapshot-to robot.png
+
+# View a URDF file directly, no ROS at all
+cargo run --example urdf_view -- test-data/urdf/simple_arm.urdf
+cargo run --example urdf_view -- robot.urdf --joint elbow_joint=1.2 \
+    --export-snapshot out.png
+
+# Print forward-kinematics world positions for a URDF
+cargo run --example fk_probe -- robot.urdf shoulder_lift_joint=-1.57
 ```
 
-Images are exported to your system temp directory for visual inspection. See [examples/README.md](examples/README.md) for details.
+More tools live in [examples/](examples/) (topic watching, URDF download).
 
-## Test Data
+## Testing philosophy
 
-Sample URDF files for testing are in [test-data/urdf/](test-data/urdf/). See that directory's README for descriptions of each sample and expected visualizations.
+Everything is checked headlessly by `cargo test` — including rendering:
 
-## Development workflow
+- The [snapshot module](src/snapshot.rs) renders offscreen (render-to-texture
+  plus GPU readback, no window) inside ordinary tests.
+- The [vision module](src/vision.rs) compares pixels in pure Rust: RMSE
+  against reference images, silhouette coverage and framing checks.
+- [tests/visual_regression.rs](tests/visual_regression.rs) renders the URDF
+  fixtures and fails on visual drift; regenerate references after intended
+  changes with `ROS_VIZ_BLESS=1 cargo test --test visual_regression`.
+- [tests/ros_e2e.rs](tests/ros_e2e.rs) runs the *whole* pipeline: emulator
+  publishes over DDS → app receives URDF + joint states → GPU render →
+  pixel assertions.
 
-- `cargo fmt`, `cargo clippy -- -D warnings`, `cargo test`
-- CI mirrors these steps in GitHub Actions.
-- Keep CURRENT_PLAN.md and docs/wiki/DesignDecisions.md up to date as architecture evolves.
+## Development
 
-## Documentation
+```bash
+cargo fmt && cargo clippy --all-targets -- -D warnings && cargo test
+```
 
-- Expectations and guardrails: AGENT.md
-- Active plan: CURRENT_PLAN.md
-- Wiki-style docs live under docs/wiki (contributing, code organization, design decisions).
+CI runs the same on Linux and macOS. Every PR must bump the version in
+Cargo.toml; merging to main auto-tags and publishes a GitHub release with
+macOS (.dmg), Linux (.deb) and Windows (.exe) artifacts.
 
-## Architecture
+- Architecture notes: [docs/wiki/Architecture.md](docs/wiki/Architecture.md)
+- Living plan: [CURRENT_PLAN.md](CURRENT_PLAN.md)
+- Issues: <https://github.com/victorpaleologue/ros-viz-rs/issues>
 
-The project is being refactored to separate concerns:
+## License
 
-- **Core visualization module** (`src/visualization/`): Reusable URDF parsing, 3D scene building, and joint transforms (no ROS dependencies)
-- **Applications**: ROS2 client, URDF test tool, future planning tools
-- **Examples**: Standalone tools demonstrating specific functionality
+[MIT](LICENSE) — free to use, including commercially.
 
-See [AGENT.md](AGENT.md) for detailed architecture principles and [CURRENT_PLAN.md](CURRENT_PLAN.md) for current development status.
-
-## Roadmap
-
-- ✅ Milestone 0: Scaffolding + CLI + CI green
-- ✅ Milestone 1: ROS2 connection layer with domain configuration
-- ✅ Milestone 2: URDF ingestion with full kinematic data extraction
-- ✅ Milestone 3: Live 3D visualization with proper joint hierarchy
-- ✅ Milestone 4: Accurate kinematic tree with URDF transforms
-- ✅ Milestone 5: External ROS device integration (proper QoS, latched topics)
-- ⏳ Milestone 6: Architecture refactoring (core visualization module)
-- 🔮 Milestone 7: Automated visual comparison tests
-- 🔮 Milestone 8: Interactive joint manipulation and bidirectional ROS
+Sample robot descriptions used in tests keep their upstream licenses
+(e.g. the UR description is BSD-3-Clause; NAO meshes are CC BY-NC-ND 4.0 and
+are downloaded from [ros-naoqi](https://github.com/ros-naoqi/nao_meshes2)
+at test time, never redistributed here).

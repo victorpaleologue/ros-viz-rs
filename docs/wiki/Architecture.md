@@ -25,24 +25,24 @@ ROS 2 robot visualizer built on Bevy + egui, designed to run natively
 ```text
 src/
   lib.rs            Public API, crate docs
-  robot/            Robot model: URDF ingestion, kinematics (k), geometry
-    urdf.rs         urdf-rs parsing + package:// mesh resolution
-    kinematics.rs   k::Chain construction, FK from joint positions
-  scene/            Bevy plugin: spawn robot entities, sync transforms,
-                    camera, lighting, ground grid
-  snapshot/         Offscreen render-to-texture + PNG readback (headless)
-  messages/         serde structs for standard ROS messages + registry
-                    (type name -> subscribe/publish/reflect vtable)
-  connection/       Transports producing/consuming ECS topic entities
-    ros2.rs         DDS via ros2-client (native only)
-    rosbridge.rs    rosbridge JSON/WebSocket (native + wasm)
-  ui/               egui panels: topic tree, generic message view/edit,
-                    joint controls
-  emulator/         In-process fake robot publishing /robot_description and
-                    /joint_states over a real transport (for tests/demos)
+  robot/            Robot model (no Bevy types)
+    mod.rs          RobotModel: full urdf_rs::Robot + k::Chain FK
+    mesh.rs         package:// resolution + STL/OBJ/COLLADA loading
+  scene.rs          Bevy plugin: spawn link/visual entities, FK transform
+                    sync, auto-framing camera, lights
+  snapshot.rs       Offscreen render-to-texture + GPU readback (headless)
+  vision.rs         Pure-Rust image checks (RMSE, silhouette, references)
+  ros_msgs.rs       serde structs for standard ROS messages
+  ros_plugin.rs     DDS transport: discovery -> ECS topic entities
+  topics_io.rs      Auto subscribe/publish for discovered topics
+  topics_view.rs    egui topic tree with value view/edit
+  emulator.rs       Fake robot publishing over real DDS (tests/demos)
   app.rs            Composition: CLI options -> plugins
   main.rs           Native binary entry point
 ```
+
+Planned moves as transports multiply (#7): `ros_plugin.rs`/`topics_io.rs`
+become `connection/ros2.rs`, joined by `connection/rosbridge.rs`.
 
 ## Data flow
 

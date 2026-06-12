@@ -2,27 +2,124 @@ name: CI
 
 on:
   push:
-    branches: [main, master, develop]
+    branches: [main]
   pull_request:
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  build:
+  lint:
     runs-on: ubuntu-latest
+    # Bevy cold build: clippy compiles the whole dep tree (~15-20 min cold,
+    # a few minutes warm with rust-cache).
+    timeout-minutes: 30
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      # alsa + udev headers are required to compile Bevy on Linux.
+      - name: Install Bevy system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev pkg-config
 
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
-      - name: fmt
-        run: cargo fmt -- --check
+      - uses: Swatinem/rust-cache@v2
+
+      - name: rustfmt
+        run: cargo fmt --check
 
       - name: clippy
         run: cargo clippy --all-targets -- -D warnings
 
-      - name: test
-        run: cargo test --all-targets
+  test-linux:
+    runs-on: ubuntu-latest
+    # Bevy cold build + tests: ~25-40 min cold, much less warm.
+    timeout-minutes: 60
+    env:
+      RUST_LOG: error
+      # tests/visual_regression.rs renders offscreen via wgpu; on the GPU-less
+      # runner it uses lavapipe (mesa software Vulkan rasterizer).
+      WGPU_BACKEND: vulkan
+    steps:
+      - uses: actions/checkout@v4
+
+      # alsa + udev for Bevy; mesa-vulkan-drivers provides lavapipe for
+      # headless GPU render tests.
+      - name: Install Bevy system dependencies and software Vulkan
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev pkg-config \
+            mesa-vulkan-drivers libvulkan1 vulkan-tools
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Unit tests
+        run: cargo test --lib
+
+      # Reference images under test-data/reference were generated on macOS
+      # Metal; lavapipe output can exceed the RMSE budget, so this step is
+      # informational on Linux. The strict gate for these tests is test-macos.
+      - name: Visual regression (informational on Linux)
+        continue-on-error: true
+        run: cargo test --test visual_regression
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-outputs-linux
+          path: .test_outputs/
+          if-no-files-found: ignore
+
+  test-macos:
+    # macos-latest (macos-14+, arm64) exposes Metal through a paravirtualized
+    # GPU (Apple5 feature set) — enough for wgpu/Bevy offscreen rendering, and
+    # references were generated on macOS Metal, so the full suite runs strictly
+    # here. If the paravirtual device ever drifts outside the RMSE budget,
+    # mirror the Linux continue-on-error split instead of regenerating images.
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      RUST_LOG: error
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Tests
+        run: cargo test
+
+      - name: Upload test artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-outputs-macos
+          path: .test_outputs/
+          if-no-files-found: ignore
+
+  version-bump:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check that Cargo.toml version was bumped
+        run: |
+          git fetch --depth=1 origin main
+          pr_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)
+          main_version=$(git show FETCH_HEAD:Cargo.toml | sed -n 's/^version = "\(.*\)"/\1/p' | head -n1)
+          echo "main: $main_version, PR: $pr_version"
+          if [ "$pr_version" = "$main_version" ]; then
+            echo "::error file=Cargo.toml::Cargo.toml version ($pr_version) matches main." \
+              "Please bump the version in Cargo.toml before merging."
+            exit 1
+          fi
