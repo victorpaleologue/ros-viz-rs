@@ -9,6 +9,7 @@
 //!   `/robot_description`, renders one frame offscreen with a real GPU and
 //!   writes it to disk — handy for headless checks of a live system.
 
+#[cfg(feature = "ros2")]
 use std::sync::Arc;
 use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
@@ -25,15 +26,20 @@ use ros2_client::ros2::{
 use tracing_subscriber::EnvFilter;
 
 use crate::options::Options;
-use crate::robot::RobotModel;
 #[cfg(feature = "ros2")]
+use crate::robot::RobotModel;
+#[cfg(any(feature = "ros2", feature = "rosbridge"))]
 use crate::robot::mesh::MeshResolver;
 #[cfg(feature = "ros2")]
 use crate::ros_msgs;
 #[cfg(feature = "ros2")]
 use crate::ros_plugin::{RosPlugin, RosSession};
 #[cfg(feature = "ros2")]
-use crate::scene::{JointPositions, spawn_robot};
+use crate::scene::JointPositions;
+#[cfg(any(feature = "ros2", feature = "rosbridge"))]
+use crate::scene::PendingRobot;
+#[cfg(any(feature = "ros2", feature = "rosbridge"))]
+use crate::scene::spawn_robot;
 use crate::scene::{RobotHandle, RobotScenePlugin, spawn_viewing_rig};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::snapshot::{self, SnapshotPlugin};
@@ -52,14 +58,6 @@ struct AppSubscriptions {
     robot_description: std::sync::Mutex<ros2_client::Subscription<ros_msgs::String>>,
     joint_states: std::sync::Mutex<ros2_client::Subscription<ros_msgs::JointState>>,
 }
-
-/// A robot model received from ROS, waiting to be spawned into the scene.
-///
-/// Filled by whichever connection backend is active; only initialized (not
-/// read) when none is compiled in.
-#[cfg_attr(not(feature = "ros2"), allow(dead_code))]
-#[derive(Resource, Default)]
-struct PendingRobot(Option<Arc<RobotModel>>);
 
 /// Warns once when no description shows up within a grace period.
 #[cfg_attr(not(feature = "ros2"), allow(dead_code))]
@@ -97,7 +95,6 @@ pub fn run(options: Options) -> anyhow::Result<()> {
 pub fn build_app(options: &Options) -> App {
     let mut app = App::new();
     app.insert_resource(options.clone());
-    app.init_resource::<PendingRobot>();
     app.init_resource::<UrdfWaitTimer>();
 
     #[cfg(target_arch = "wasm32")]
@@ -156,6 +153,13 @@ pub fn build_app(options: &Options) -> App {
 
     if options.demo {
         app.add_plugins(crate::demo::DemoPlugin);
+        return app;
+    }
+
+    #[cfg(feature = "rosbridge")]
+    if let Some(url) = options.rosbridge.clone() {
+        app.add_plugins(crate::rosbridge::RosbridgePlugin { url });
+        app.add_systems(Update, spawn_pending_robot);
         return app;
     }
 
@@ -338,7 +342,7 @@ fn receive_joint_states(
 }
 
 /// Spawn the robot scene once a model has been received.
-#[cfg(feature = "ros2")]
+#[cfg(any(feature = "ros2", feature = "rosbridge"))]
 fn spawn_pending_robot(
     mut commands: Commands,
     mut pending: ResMut<PendingRobot>,

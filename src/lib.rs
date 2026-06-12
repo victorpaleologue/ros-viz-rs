@@ -9,6 +9,8 @@ pub mod robot;
 pub mod ros_msgs;
 #[cfg(feature = "ros2")]
 pub mod ros_plugin;
+#[cfg(feature = "rosbridge")]
+pub mod rosbridge;
 pub mod scene;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod snapshot;

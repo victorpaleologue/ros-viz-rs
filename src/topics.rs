@@ -132,3 +132,30 @@ pub fn topic_kind_from_dds_name(dds_name: &str) -> TopicKind {
         TopicKind::Unknown
     }
 }
+
+/// Drain subscriptions and update [`TopicValue`] on the corresponding
+/// entities with the latest reflected message.
+pub fn poll_subscription_values(mut topics: Query<(&Subscription, &mut TopicValue)>) {
+    for (subscription, mut latest) in topics.iter_mut() {
+        if let Some(value) = subscription.0.poll() {
+            latest.0 = Some(value);
+        }
+    }
+}
+
+/// Publish the contents of [`TopicEdit`] when signalled by the UI.
+///
+/// The UI edits `TopicEdit` and then inserts a [`PublishRequest`] marker
+/// component.  This system picks those up, sends the value, and removes the
+/// marker.
+pub fn handle_publish_requests(
+    mut commands: Commands,
+    requests: Query<(Entity, &TopicInfo, &TopicEdit, &Publisher), With<PublishRequest>>,
+) {
+    for (entity, info, edit, publisher) in requests.iter() {
+        if let Err(e) = publisher.0.publish(&edit.0) {
+            tracing::error!("Failed to publish on '{}': {e}", info.topic_name);
+        }
+        commands.entity(entity).remove::<PublishRequest>();
+    }
+}

@@ -35,6 +35,20 @@ jobs:
       - name: clippy
         run: cargo clippy --all-targets -- -D warnings
 
+      # The crate must build for every transport combination and for the
+      # browser (no DDS on wasm).
+      - name: feature combinations
+        run: |
+          cargo clippy --lib --no-default-features -- -D warnings
+          cargo clippy --lib --no-default-features --features ros2 -- -D warnings
+          cargo clippy --lib --no-default-features --features rosbridge -- -D warnings
+
+      - name: wasm target
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo check --lib --no-default-features --features rosbridge \
+            --target wasm32-unknown-unknown
+
   test-linux:
     runs-on: ubuntu-latest
     # Bevy cold build + tests: ~25-40 min cold, much less warm.
@@ -102,6 +116,46 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-outputs-macos
+          path: .test_outputs/
+          if-no-files-found: ignore
+
+  docker-integration:
+    # End-to-end against real ROS 2 robot stacks in Docker containers
+    # (tests/docker_integration.rs): a UR5e description stack and a fake NAO
+    # running naoqi_driver2's emulation mode. Linux-only (needs --network
+    # host for DDS). Expect ~45-60 min cold (the fake NAO image
+    # colcon-builds naoqi_driver + deps from source, plus the Bevy dep
+    # tree), ~20-30 min with warm rust-cache and Docker layer cache.
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      RUST_LOG: error
+      # The snapshot renders offscreen via wgpu; on the GPU-less runner it
+      # uses lavapipe (mesa software Vulkan rasterizer).
+      WGPU_BACKEND: vulkan
+    steps:
+      - uses: actions/checkout@v4
+
+      # alsa + udev for Bevy; mesa-vulkan-drivers provides lavapipe for
+      # headless GPU render tests.
+      - name: Install Bevy system dependencies and software Vulkan
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev pkg-config libwayland-dev libxkbcommon-dev \
+            mesa-vulkan-drivers libvulkan1 vulkan-tools
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Docker integration tests
+        run: cargo test --test docker_integration -- --ignored
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-outputs-docker-integration
           path: .test_outputs/
           if-no-files-found: ignore
 

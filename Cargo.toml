@@ -20,9 +20,11 @@ section = "science"
 
 
 [features]
-default = ["ros2"]
+default = ["ros2", "rosbridge"]
 # Native DDS transport via ros2-client/rustdds. Off for wasm builds.
 ros2 = ["dep:ros2-client", "dep:rustdds", "dep:futures", "dep:async-channel"]
+# rosbridge JSON/WebSocket transport; works natively and on wasm.
+rosbridge = ["dep:ewebsock"]
 
 [dependencies]
 bevy_egui = "0.39"
@@ -47,9 +49,11 @@ mesh-loader = "0.1"
 image = { version = "0.24", default-features = false, features = ["png"] }
 async-channel = { version = "2.3", optional = true }
 futures = { version = "0.3", optional = true }
+ewebsock = { version = "0.8", optional = true }
 
 [dev-dependencies]
 chrono = ">=0.4.35"
 tempfile = "3"
 # Only examples use an async runtime; the library itself is sync.
 tokio = { version = "1.48.0", features = ["macros", "rt", "rt-multi-thread"] }
+tungstenite = "0.29"

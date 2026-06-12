@@ -29,6 +29,11 @@ pub struct JointPositions {
     pub positions: HashMap<String, f64>,
 }
 
+/// A robot model received from a connection backend, waiting to be
+/// spawned into the scene (consumed by the app's spawn system).
+#[derive(Resource, Default)]
+pub struct PendingRobot(pub Option<Arc<RobotModel>>);
+
 /// Marks a robot root entity and owns its kinematic model.
 #[derive(Component, Clone)]
 pub struct RobotHandle(pub(crate) Arc<RobotModel>);
@@ -56,6 +61,7 @@ pub struct RobotScenePlugin;
 impl Plugin for RobotScenePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<JointPositions>();
+        app.init_resource::<PendingRobot>();
         app.add_systems(Update, (sync_robot_poses, frame_camera_on_new_robot));
     }
 }

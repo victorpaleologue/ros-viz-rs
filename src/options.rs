@@ -24,6 +24,11 @@ pub struct Options {
     #[arg(long)]
     pub demo: bool,
 
+    /// Connect through a rosbridge WebSocket server instead of DDS,
+    /// e.g. `ws://localhost:9090`.
+    #[arg(long, value_name = "URL")]
+    pub rosbridge: Option<std::string::String>,
+
     /// Run without creating a native window and save the rendered frame to the given path.
     #[arg(long, value_name = "PATH")]
     pub snapshot_to: Option<PathBuf>,
