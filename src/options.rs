@@ -20,13 +20,14 @@ pub struct Options {
     #[arg(long, env = "ROS_DOMAIN_ID", value_name = "ID", default_value_t = DEFAULT_ROS_DOMAIN_ID)]
     pub domain: u16,
 
-    /// URDF visualization. If set, ROS is not used.
-    #[arg(long, value_name = "PATH")]
-    pub urdf: Option<PathBuf>,
-
     /// Run without creating a native window and save the rendered frame to the given path.
     #[arg(long, value_name = "PATH")]
     pub snapshot_to: Option<PathBuf>,
+
+    /// Map a ROS package to a directory for resolving package:// mesh URIs,
+    /// as `name=path`. Repeatable.
+    #[arg(long, value_name = "NAME=PATH")]
+    pub package: Vec<String>,
 
     /// Render width in pixels (windowed or headless capture).
     #[arg(long, default_value_t = DEFAULT_WIDTH, value_name = "PX")]
@@ -64,7 +65,6 @@ mod tests {
     fn defaults_to_zero_when_not_set() {
         let options = with_domain_env(None, || Options::parse_from(["ros-viz-rs"]));
         assert_eq!(options.domain, 0);
-        assert!(options.urdf.is_none());
         assert!(options.snapshot_to.is_none());
         assert_eq!(options.width, DEFAULT_WIDTH);
         assert_eq!(options.height, DEFAULT_HEIGHT);
@@ -74,7 +74,6 @@ mod tests {
     fn reads_from_env_when_no_flag() {
         let options = with_domain_env(Some("42"), || Options::parse_from(["ros-viz-rs"]));
         assert_eq!(options.domain, 42);
-        assert!(options.urdf.is_none());
         assert!(options.snapshot_to.is_none());
         assert_eq!(options.width, DEFAULT_WIDTH);
         assert_eq!(options.height, DEFAULT_HEIGHT);

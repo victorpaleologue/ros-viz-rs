@@ -1,182 +1,201 @@
-use anyhow::Result;
-use ros_viz_rs::urdf::parse_urdf;
-use ros_viz_rs::visualization::create_urdf_view_app;
-use std::fs;
-use std::path::Path;
-use std::process::Command;
+//! Headless visual regression tests.
+//!
+//! Each test renders a URDF fixture entirely offscreen (no window, real GPU
+//! via [`ros_viz_rs::snapshot`]), then checks the pixels two ways:
+//!
+//! 1. **Structurally** with [`ros_viz_rs::vision`]: a robot silhouette is
+//!    visible, roughly centered and of sensible size — failures stay
+//!    diagnosable without squinting at diffs.
+//! 2. **Against a reference image** with an RMSE budget. Regenerate
+//!    references after an intended rendering change with
+//!    `ROS_VIZ_BLESS=1 cargo test --test visual_regression`.
+//!
+//! Artifacts (actual + diff PNGs) land in `.test_outputs/` on failure.
 
-/// Configuration for visual regression tests
-struct VisualTest {
-    name: &'static str,
-    urdf_path: &'static str,
-    reference_image: &'static str,
+use std::path::Path;
+use std::sync::{Arc, Mutex, OnceLock};
+
+use bevy::ecs::system::SystemState;
+use bevy::prelude::*;
+use image::RgbaImage;
+
+use ros_viz_rs::robot::RobotModel;
+use ros_viz_rs::robot::mesh::MeshResolver;
+use ros_viz_rs::scene::{
+    AutoFrameCamera, JointPositions, RobotScenePlugin, spawn_lights, spawn_robot,
+};
+use ros_viz_rs::snapshot::{SnapshotCamera, SnapshotPlugin, capture};
+use ros_viz_rs::vision;
+
+const WIDTH: u32 = 800;
+const HEIGHT: u32 = 600;
+/// Tolerates anti-aliasing and driver variations, not structural changes.
+const MAX_RMSE: f64 = 0.02;
+
+/// One GPU app at a time per process keeps captures deterministic.
+fn gpu_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    match LOCK.get_or_init(|| Mutex::new(())).lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
 }
 
-const VISUAL_TESTS: &[VisualTest] = &[
-    VisualTest {
-        name: "simple_arm",
-        urdf_path: "test-data/urdf/simple_arm.urdf",
-        reference_image: "test-data/reference/simple_arm.png",
-    },
-    VisualTest {
-        name: "two_link_planar",
-        urdf_path: "test-data/urdf/two_link_planar.urdf",
-        reference_image: "test-data/reference/two_link_planar.png",
-    },
-    VisualTest {
-        name: "triple_pendulum",
-        urdf_path: "test-data/urdf/triple_pendulum.urdf",
-        reference_image: "test-data/reference/triple_pendulum.png",
-    },
-    VisualTest {
-        name: "nao_robot",
-        urdf_path: "test-data/urdf/nao_robot.urdf",
-        reference_image: "test-data/reference/nao_robot.png",
-    },
-];
+/// Render a URDF fixture offscreen with optional joint positions.
+fn render_urdf(urdf_path: &str, joints: &[(&str, f64)]) -> RgbaImage {
+    let model = Arc::new(RobotModel::from_urdf_file(urdf_path).expect("URDF parses"));
+    let resolver = MeshResolver::for_urdf_file(urdf_path);
 
-/// Maximum acceptable difference (0.0 = identical, 1.0 = completely different)
-const MAX_DIFF_THRESHOLD: f64 = 0.001; // 0.1% difference allowed
-
-#[test]
-#[ignore = "requires a windowed app (macOS main thread + GPU)"]
-fn visual_regression_tests() -> Result<()> {
-    // Check if ImageMagick is available
-    if !is_imagemagick_available() {
-        eprintln!("⚠️  ImageMagick not found - skipping visual regression tests");
-        eprintln!(
-            "   Install with: brew install imagemagick (macOS) or apt install imagemagick (Linux)"
-        );
-        return Ok(());
+    let mut positions = JointPositions::default();
+    for (name, value) in joints {
+        positions.positions.insert(name.to_string(), *value);
     }
 
-    let temp_dir = std::env::temp_dir().join("ros-viz-rs-visual-tests");
-    std::fs::create_dir_all(&temp_dir)?;
+    let mut app = App::new();
+    app.add_plugins(SnapshotPlugin {
+        width: WIDTH,
+        height: HEIGHT,
+    });
+    app.add_plugins(RobotScenePlugin);
+    app.insert_resource(ClearColor(Color::srgb(0.13, 0.14, 0.17)));
+    app.insert_resource(positions);
 
-    let mut all_passed = true;
-    let mut results = Vec::new();
-
-    for test in VISUAL_TESTS {
-        println!("\n🔍 Testing: {}", test.name);
-
-        let output_path = temp_dir.join(format!("{}.png", test.name));
-        let diff_path = temp_dir.join(format!("{}_diff.png", test.name));
-
-        // Generate fresh render
-        println!("   Rendering URDF...");
-        let render_result = render_urdf(test.urdf_path, &output_path)?;
-        if !render_result.success {
-            eprintln!("   ✗ Render failed");
-            all_passed = false;
-            results.push((test.name, false, None));
-            continue;
-        }
-
-        // Compare with reference
-        println!("   Comparing with reference...");
-        let diff = compare_images(test.reference_image, &output_path, &diff_path)?;
-
-        let passed = diff <= MAX_DIFF_THRESHOLD;
-        results.push((test.name, passed, Some(diff)));
-
-        if passed {
-            println!("   ✓ PASS (diff: {:.4}%)", diff * 100.0);
-        } else {
-            println!(
-                "   ✗ FAIL (diff: {:.4}% > {:.4}%)",
-                diff * 100.0,
-                MAX_DIFF_THRESHOLD * 100.0
-            );
-            println!("   Reference: {}", test.reference_image);
-            println!("   Generated: {}", output_path.display());
-            println!("   Diff image: {}", diff_path.display());
-            all_passed = false;
-        }
-    }
-
-    // Summary
-    println!("\n{}", "=".repeat(60));
-    println!("Visual Regression Test Summary:");
-    println!("{}", "=".repeat(60));
-    for (name, passed, diff) in &results {
-        let status = if *passed { "✓ PASS" } else { "✗ FAIL" };
-        let diff_str = diff
-            .map(|d| format!("{:.4}%", d * 100.0))
-            .unwrap_or_else(|| "N/A".to_string());
-        println!("{:20} {} (diff: {})", name, status, diff_str);
-    }
-    println!("{}", "=".repeat(60));
-
-    assert!(
-        all_passed,
-        "Visual regression tests failed - see diff images in {}",
-        temp_dir.display()
+    // Make the snapshot camera auto-frame the robot once it has bounds.
+    app.add_systems(
+        Update,
+        |mut commands: Commands,
+         cameras: Query<Entity, (With<SnapshotCamera>, Without<AutoFrameCamera>)>| {
+            for entity in cameras.iter() {
+                commands.entity(entity).insert(AutoFrameCamera);
+            }
+        },
     );
 
-    Ok(())
-}
-
-fn render_urdf(urdf_path: &str, output_path: &Path) -> Result<RenderResult> {
-    // Use the urdf_snapshot helper binary which reuses the factorized visualization code
-    // Load and parse URDF
-    let urdf_xml = fs::read_to_string(urdf_path)?;
-    let scene = parse_urdf(&urdf_xml)?;
-
-    // Create app with snapshot export
-    let window_title = format!("Snapshot: {}", urdf_path);
-    let mut app = create_urdf_view_app(scene, window_title, Some(output_path.into()));
-
-    // Run the app (it will exit after capturing the screenshot)
-    let exit_status = app.run();
-
-    Ok(RenderResult {
-        success: exit_status.is_success(),
-    })
-}
-
-struct RenderResult {
-    success: bool,
-}
-
-fn compare_images(reference: &str, generated: &Path, diff_output: &Path) -> Result<f64> {
-    let output = Command::new("magick")
-        .args([
-            "compare",
-            "-metric",
-            "RMSE",
-            reference,
-            generated.to_str().unwrap(),
-            diff_output.to_str().unwrap(),
-        ])
-        .output()?;
-
-    // ImageMagick compare writes metrics to stderr
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    // Parse RMSE output: "1234.56 (0.0123)"
-    // We want the normalized value in parentheses
-    let diff = parse_rmse(&stderr)?;
-
-    Ok(diff)
-}
-
-fn parse_rmse(stderr: &str) -> Result<f64> {
-    // Example output: "1234.56 (0.0123)"
-    // We want the value in parentheses (normalized difference)
-    if let (Some(start), Some(end)) = (stderr.find('('), stderr.find(')')) {
-        let diff_str = &stderr[start + 1..end];
-        return diff_str
-            .parse::<f64>()
-            .map_err(|e| anyhow::anyhow!("Failed to parse RMSE: {}", e));
+    type SpawnParams<'w, 's> = (
+        Commands<'w, 's>,
+        ResMut<'w, Assets<Mesh>>,
+        ResMut<'w, Assets<StandardMaterial>>,
+    );
+    let world = app.world_mut();
+    let mut state: SystemState<SpawnParams> = SystemState::new(world);
+    {
+        let (mut commands, mut meshes, mut materials) = state.get_mut(world);
+        spawn_lights(&mut commands);
+        spawn_robot(&mut commands, &mut meshes, &mut materials, model, &resolver);
     }
+    state.apply(world);
 
-    Err(anyhow::anyhow!("Could not parse RMSE from: {}", stderr))
+    capture(&mut app, 12).expect("offscreen capture succeeds")
 }
 
-fn is_imagemagick_available() -> bool {
-    Command::new("magick")
-        .arg("--version")
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
+/// Structural sanity: something robot-shaped is visible and framed.
+fn assert_robot_visible(img: &RgbaImage, name: &str) {
+    // The corner pixel is reliable background (robots are auto-framed
+    // around the center).
+    let background = *img.get_pixel(0, 0);
+    let s = vision::silhouette(img, background, 12);
+    assert!(
+        s.coverage > 0.002,
+        "{name}: robot covers only {:.4}% of the frame",
+        s.coverage * 100.0
+    );
+    assert!(
+        s.coverage < 0.75,
+        "{name}: 'robot' covers {:.1}% — camera inside geometry?",
+        s.coverage * 100.0
+    );
+    let (x_min, y_min, x_max, y_max) = s.bbox.expect("bbox exists when coverage > 0");
+    let (cx, cy) = (
+        (x_min + x_max) as f64 / 2.0 / WIDTH as f64,
+        (y_min + y_max) as f64 / 2.0 / HEIGHT as f64,
+    );
+    assert!(
+        (0.2..=0.8).contains(&cx) && (0.2..=0.8).contains(&cy),
+        "{name}: silhouette center ({cx:.2}, {cy:.2}) is off-frame"
+    );
+}
+
+fn check_against_reference(img: &RgbaImage, name: &str) {
+    let reference = Path::new("test-data/reference").join(format!("{name}.png"));
+    let artifacts = Path::new(".test_outputs");
+    vision::assert_matches_reference(img, &reference, MAX_RMSE, artifacts)
+        .unwrap_or_else(|e| panic!("{name}: {e}"));
+}
+
+fn visual_test(urdf: &str, name: &str, joints: &[(&str, f64)]) {
+    let _gpu = gpu_lock();
+    let img = render_urdf(urdf, joints);
+    assert_robot_visible(&img, name);
+    check_against_reference(&img, name);
+}
+
+#[test]
+fn simple_arm_renders() {
+    visual_test("test-data/urdf/simple_arm.urdf", "simple_arm", &[]);
+}
+
+#[test]
+fn two_link_planar_renders() {
+    visual_test(
+        "test-data/urdf/two_link_planar.urdf",
+        "two_link_planar",
+        &[],
+    );
+}
+
+#[test]
+fn two_link_planar_bends() {
+    visual_test(
+        "test-data/urdf/two_link_planar.urdf",
+        "two_link_planar_bent",
+        &[("joint2", std::f64::consts::FRAC_PI_2)],
+    );
+}
+
+#[test]
+fn triple_pendulum_renders() {
+    visual_test(
+        "test-data/urdf/triple_pendulum.urdf",
+        "triple_pendulum",
+        &[],
+    );
+}
+
+#[test]
+fn box_bot_renders() {
+    visual_test("test-data/urdf/box_bot.urdf", "box_bot", &[]);
+}
+
+#[test]
+fn nao_skeleton_renders() {
+    // Without the nao_meshes package on disk the NAO renders as fallback
+    // markers — still a strong structural check on FK and spawning.
+    visual_test("test-data/urdf/nao_robot.urdf", "nao_robot", &[]);
+}
+
+#[test]
+fn nao_posed_differs_from_rest() {
+    let _gpu = gpu_lock();
+    let rest = render_urdf("test-data/urdf/nao_robot.urdf", &[]);
+    let posed = render_urdf(
+        "test-data/urdf/nao_robot.urdf",
+        &[("LShoulderPitch", -1.5), ("HeadYaw", 0.8)],
+    );
+    let rmse = vision::rmse(&rest, &posed).expect("same dimensions");
+    assert!(
+        rmse > 0.004,
+        "posing joints changed almost nothing (rmse {rmse:.5}) — FK broken?"
+    );
+}
+
+#[test]
+fn rendering_is_deterministic() {
+    let _gpu = gpu_lock();
+    let a = render_urdf("test-data/urdf/simple_arm.urdf", &[]);
+    let b = render_urdf("test-data/urdf/simple_arm.urdf", &[]);
+    let rmse = vision::rmse(&a, &b).expect("same dimensions");
+    assert!(
+        rmse < 0.001,
+        "two identical renders differ (rmse {rmse:.5}) — nondeterminism"
+    );
 }

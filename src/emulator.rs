@@ -81,21 +81,6 @@ impl Emulator {
     }
 }
 
-/// Create a minimal solid-white PNG image of the given dimensions.
-///
-/// This is used as placeholder output when running in headless snapshot mode
-/// (where no GPU rendering pipeline is available).
-pub fn make_stub_png(width: u32, height: u32) -> Vec<u8> {
-    use image::{ImageBuffer, Rgba, ImageOutputFormat};
-    use std::io::Cursor;
-
-    let img = ImageBuffer::from_pixel(width, height, Rgba([255u8, 255, 255, 255]));
-    let mut buf = Cursor::new(Vec::new());
-    img.write_to(&mut buf, ImageOutputFormat::Png)
-        .expect("PNG encoding should not fail");
-    buf.into_inner()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

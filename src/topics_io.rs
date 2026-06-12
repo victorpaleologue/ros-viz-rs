@@ -137,25 +137,13 @@ pub(crate) fn auto_manage_topics(
 
         // No publisher setup yet.
         if rs_and_ws.is_publishable() && has_publisher.is_none() {
-            setup_publisher(
-                &mut commands,
-                entity,
-                node,
-                ros_topic_name,
-                &info.type_name,
-            );
+            setup_publisher(&mut commands, entity, node, ros_topic_name, &info.type_name);
             commands.entity(entity).insert(TopicEditBuffer::default());
         }
 
         // No subscription setup yet.
         if rs_and_ws.is_subscribable() && has_subscription.is_none() {
-            setup_subscription(
-                &mut commands,
-                entity,
-                node,
-                ros_topic_name,
-                &info.type_name,
-            );
+            setup_subscription(&mut commands, entity, node, ros_topic_name, &info.type_name);
         }
 
         // Topic not publishable anymore.

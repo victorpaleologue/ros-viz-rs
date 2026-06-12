@@ -82,10 +82,7 @@ impl TopicTreeNode {
             self.leaf = Some(TopicLeaf { info, entity });
             return;
         }
-        let child = self
-            .children
-            .entry(parts[0].to_owned())
-            .or_default();
+        let child = self.children.entry(parts[0].to_owned()).or_default();
         child.insert(&parts[1..], info, entity);
     }
 
@@ -182,17 +179,17 @@ pub fn topics_tree_ui_system(
         if !has_topics {
             render_empty_state(ui);
         } else {
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            render_tree_children(
-                ui,
-                &tree,
-                &mut commands,
-                &mut values,
-                &mut buffers,
-                &subscribable,
-                &publishable,
-            );
-        });
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                render_tree_children(
+                    ui,
+                    &tree,
+                    &mut commands,
+                    &mut values,
+                    &mut buffers,
+                    &subscribable,
+                    &publishable,
+                );
+            });
         }
     };
 
@@ -411,8 +408,8 @@ fn render_leaf_io(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bevy_egui::EguiFullOutput;
     use crate::ros_plugin::TopicKind;
+    use bevy_egui::EguiFullOutput;
 
     // -----------------------------------------------------------------------
     // Unit tests for traits
@@ -495,7 +492,7 @@ mod tests {
 
     #[test]
     fn tree_multiple_topics_shared_prefix() {
-        let topics = vec![
+        let topics = [
             TopicInfo::new(
                 "/robot/joint_states",
                 "sensor_msgs/JointState",
@@ -557,7 +554,7 @@ mod tests {
 
     #[test]
     fn tree_preserves_sorted_order() {
-        let topics = vec![
+        let topics = [
             TopicInfo::new("/z", "some_msgs/Type", TopicKind::Unknown),
             TopicInfo::new("/a", "some_msgs/Type", TopicKind::Unknown),
             TopicInfo::new("/m", "some_msgs/Type", TopicKind::Unknown),
