@@ -34,8 +34,10 @@ use image::RgbaImage;
 const SNAPSHOT_FORMAT: TextureFormat = TextureFormat::Rgba8UnormSrgb;
 
 /// Maximum number of extra frames [`capture`] is willing to run while waiting
-/// for the asynchronous GPU readback to deliver a frame.
-const MAX_READBACK_FRAMES: u32 = 1000;
+/// for the asynchronous GPU readback to deliver a frame (~2 s at 60 fps —
+/// readback normally lands within 1–3 frames; bounded so a missing GPU
+/// fails fast with a clear error instead of stalling CI).
+const MAX_READBACK_FRAMES: u32 = 120;
 
 /// Marker component on the camera spawned by [`spawn_snapshot_camera`], so
 /// callers can reposition it (e.g. `Query<&mut Transform, With<SnapshotCamera>>`).

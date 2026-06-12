@@ -68,7 +68,7 @@ pub fn run(options: Options) -> anyhow::Result<()> {
 
     if let Some(path) = options.snapshot_to.clone() {
         let mut app = build_app(&options);
-        run_headless_snapshot(&mut app, &path, Duration::from_secs(15))
+        run_headless_snapshot(&mut app, &path, Duration::from_secs(30))
     } else {
         build_app(&options).run();
         Ok(())
@@ -251,7 +251,10 @@ fn receive_robot_description(
     let Some(subs) = subs.as_ref() else {
         return;
     };
-    let sub = subs.robot_description.lock().unwrap();
+    let sub = subs
+        .robot_description
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
     let mut latest = None;
     while let Ok(Some((msg, _))) = sub.take() {
         latest = Some(msg.data);
@@ -286,7 +289,7 @@ fn receive_joint_states(
     subs: Option<Res<AppSubscriptions>>,
 ) {
     let Some(subs) = subs.as_ref() else { return };
-    let sub = subs.joint_states.lock().unwrap();
+    let sub = subs.joint_states.lock().unwrap_or_else(|p| p.into_inner());
     let mut latest = None;
     while let Ok(Some((msg, _))) = sub.take() {
         latest = Some(msg);

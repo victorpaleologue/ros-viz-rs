@@ -26,6 +26,11 @@ pub struct RobotModel {
     pub urdf: urdf_rs::Robot,
     /// Kinematic chain mirroring the URDF joint tree.
     chain: k::Chain<f32>,
+    /// Joint limits read once at construction (the chain locks per access).
+    limits: HashMap<String, (f32, f32)>,
+    /// Serializes set-positions + forward-kinematics cycles: the chain's
+    /// per-node interior mutability would otherwise let two posers interleave.
+    pose_lock: std::sync::Mutex<()>,
 }
 
 impl RobotModel {
@@ -33,7 +38,16 @@ impl RobotModel {
     pub fn from_urdf_str(xml: &str) -> anyhow::Result<Self> {
         let urdf = urdf_rs::read_from_string(xml)?;
         let chain = k::Chain::from(&urdf);
-        Ok(Self { urdf, chain })
+        let limits = chain
+            .iter_joints()
+            .filter_map(|j| j.limits.map(|l| (j.name.clone(), (l.min, l.max))))
+            .collect();
+        Ok(Self {
+            urdf,
+            chain,
+            limits,
+            pose_lock: std::sync::Mutex::new(()),
+        })
     }
 
     /// Read and parse a URDF file.
@@ -54,9 +68,7 @@ impl RobotModel {
 
     /// Position limits (lower, upper) for a movable joint, when bounded.
     pub fn joint_limits(&self, joint_name: &str) -> Option<(f32, f32)> {
-        let node = self.chain.find(joint_name)?;
-        let joint = node.joint();
-        joint.limits.map(|l| (l.min, l.max))
+        self.limits.get(joint_name).copied()
     }
 
     /// Set joint positions by name, clamping to URDF limits.
@@ -64,17 +76,8 @@ impl RobotModel {
     /// Unknown joint names are ignored (a `/joint_states` message routinely
     /// carries more joints than the description, e.g. grippers).
     pub fn set_joint_positions(&self, positions: &HashMap<String, f64>) {
-        for (name, position) in positions {
-            if let Some(node) = self.chain.find(name) {
-                let position = *position as f32;
-                let clamped = match self.joint_limits(name) {
-                    Some((lo, hi)) => position.clamp(lo, hi),
-                    None => position,
-                };
-                // Errors only occur for fixed/mimic joints; skip those.
-                let _ = node.set_joint_position(clamped);
-            }
-        }
+        let _guard = self.pose_guard();
+        self.set_joint_positions_locked(positions);
     }
 
     /// Current world transform of every link, keyed by link name.
@@ -83,6 +86,46 @@ impl RobotModel {
     /// coincides with its joint frame, so each chain node's world transform
     /// is its child link's pose; the root link sits on the chain root.
     pub fn link_world_transforms(&self) -> HashMap<String, Isometry3<f32>> {
+        let _guard = self.pose_guard();
+        self.link_world_transforms_locked()
+    }
+
+    /// Atomically apply joint positions and run forward kinematics.
+    ///
+    /// Use this rather than [`set_joint_positions`](Self::set_joint_positions)
+    /// followed by [`link_world_transforms`](Self::link_world_transforms)
+    /// when the model could be posed from elsewhere in between (e.g. one
+    /// model shared by several scene robots).
+    pub fn pose_transforms(
+        &self,
+        positions: &HashMap<String, f64>,
+    ) -> HashMap<String, Isometry3<f32>> {
+        let _guard = self.pose_guard();
+        self.set_joint_positions_locked(positions);
+        self.link_world_transforms_locked()
+    }
+
+    fn pose_guard(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.pose_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn set_joint_positions_locked(&self, positions: &HashMap<String, f64>) {
+        for (name, position) in positions {
+            if let Some(node) = self.chain.find(name) {
+                let position = *position as f32;
+                let clamped = match self.limits.get(name) {
+                    Some((lo, hi)) => position.clamp(*lo, *hi),
+                    None => position,
+                };
+                // Errors only occur for fixed/mimic joints; skip those.
+                let _ = node.set_joint_position(clamped);
+            }
+        }
+    }
+
+    fn link_world_transforms_locked(&self) -> HashMap<String, Isometry3<f32>> {
         self.chain.update_transforms();
         self.chain
             .iter()

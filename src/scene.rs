@@ -31,7 +31,14 @@ pub struct JointPositions {
 
 /// Marks a robot root entity and owns its kinematic model.
 #[derive(Component, Clone)]
-pub struct RobotHandle(pub Arc<RobotModel>);
+pub struct RobotHandle(pub(crate) Arc<RobotModel>);
+
+impl RobotHandle {
+    /// The robot model driving this scene robot.
+    pub fn model(&self) -> &RobotModel {
+        &self.0
+    }
+}
 
 /// Marks a link entity; transform is written by forward kinematics.
 #[derive(Component, Debug)]
@@ -270,18 +277,20 @@ fn visual_material(
     Some(materials.add(robot_material(Color::srgba(r, g, b, a))))
 }
 
-/// Re-pose all robots whenever [`JointPositions`] changes.
+/// Re-pose robots whenever [`JointPositions`] changes (and once when a
+/// robot spawns, so a pre-populated resource takes effect immediately).
 fn sync_robot_poses(
     joint_positions: Res<JointPositions>,
-    robots: Query<(&RobotHandle, &Children)>,
+    robots: Query<(Entity, &RobotHandle, &Children)>,
+    new_robots: Query<(), Added<RobotHandle>>,
     mut links: Query<(&LinkEntity, &mut Transform)>,
 ) {
-    if !joint_positions.is_changed() {
+    if !joint_positions.is_changed() && new_robots.is_empty() {
         return;
     }
-    for (robot, children) in robots.iter() {
-        robot.0.set_joint_positions(&joint_positions.positions);
-        let transforms = robot.0.link_world_transforms();
+    for (_entity, robot, children) in robots.iter() {
+        // Atomic set + FK: the model could be shared between robots.
+        let transforms = robot.0.pose_transforms(&joint_positions.positions);
         for child in children.iter() {
             if let Ok((link, mut transform)) = links.get_mut(child)
                 && let Some(iso) = transforms.get(&link.name)

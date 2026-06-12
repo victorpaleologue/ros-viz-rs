@@ -123,10 +123,11 @@ fn scene_to_mesh(scene: mesh_loader::Scene, path: &Path) -> anyhow::Result<Loade
         .meshes
         .iter()
         .all(|m| m.normals.len() == m.vertices.len());
-    let all_colors = scene
-        .meshes
-        .iter()
-        .all(|m| m.colors[0].len() == m.vertices.len());
+    let all_colors = scene.meshes.iter().all(|m| {
+        m.colors
+            .first()
+            .is_some_and(|c| c.len() == m.vertices.len())
+    });
 
     for mesh in scene.meshes {
         let offset = out.vertices.len() as u32;

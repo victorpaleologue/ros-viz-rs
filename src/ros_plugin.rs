@@ -68,12 +68,6 @@ impl RosPlugin {
     }
 }
 
-impl Default for RosPlugin {
-    fn default() -> Self {
-        Self::new(0, "vizij_node").expect("failed to create ROS plugin")
-    }
-}
-
 impl Plugin for RosPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(self.session.clone());
