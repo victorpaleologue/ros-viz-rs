@@ -51,9 +51,23 @@
       position: absolute;
       inset: 0;
       display: flex;
+      flex-direction: column;
+      gap: 1rem;
       align-items: center;
       justify-content: center;
       color: var(--muted);
+    }
+    #loading .spinner {
+      width: 44px;
+      height: 44px;
+      border: 4px solid rgba(97, 179, 255, 0.25);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) {
+      #loading .spinner { animation-duration: 2.4s; }
     }
     .controls {
       display: flex;
@@ -111,7 +125,10 @@
     <div class="viewer">
       <div class="viewer-canvas">
         <canvas id="ros-viz-canvas"></canvas>
-        <div id="loading">Loading the visualizer (a few MB of WebAssembly)…</div>
+        <div id="loading">
+          <div class="spinner"></div>
+          <span>Loading the visualizer (a few MB of WebAssembly)…</span>
+        </div>
       </div>
       <div class="controls">
         <input id="rosbridge-url" type="text"

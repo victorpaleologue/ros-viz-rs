@@ -88,6 +88,7 @@ pub mod demo;
 pub mod diagnostics;
 #[cfg(feature = "ros2")]
 pub mod emulator;
+pub mod loading;
 pub mod messages;
 pub mod options;
 pub mod robot;
