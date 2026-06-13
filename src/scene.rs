@@ -416,28 +416,27 @@ pub fn spawn_viewing_rig(commands: &mut Commands) {
     spawn_lights(commands);
 }
 
-/// Spawn the standard lighting used across viewer, snapshots and tests
-/// (two directional lights and an ambient fill — deterministic, no shadows).
+/// Spawn the standard lighting used across viewer, snapshots and tests:
+/// one directional key light plus a strong ambient fill — deterministic,
+/// no shadows.
+///
+/// Exactly one directional light is used on purpose: Bevy's WebGL2 backend
+/// supports only a single directional light and silently drops extras (with
+/// a warning), which left the web demo lit from one harsh side. A bright
+/// ambient term fills the shadowed side instead, so native and web match and
+/// matte parts (e.g. skeleton markers) read clearly.
 pub fn spawn_lights(commands: &mut Commands) {
     commands.spawn((
         DirectionalLight {
-            illuminance: 12_000.0,
+            illuminance: 9_000.0,
             shadows_enabled: false,
             ..default()
         },
         Transform::from_xyz(4.0, 8.0, 4.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
-    commands.spawn((
-        DirectionalLight {
-            illuminance: 3_000.0,
-            shadows_enabled: false,
-            ..default()
-        },
-        Transform::from_xyz(-4.0, 3.0, -2.0).looking_at(Vec3::ZERO, Vec3::Y),
-    ));
     commands.spawn(AmbientLight {
         color: Color::WHITE,
-        brightness: 250.0,
+        brightness: 1_400.0,
         affects_lightmapped_meshes: true,
     });
 }

@@ -1,3 +1,4 @@
 /target
 .test_outputs/
 *.dmg
+web/pkg/

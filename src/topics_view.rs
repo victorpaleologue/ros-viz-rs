@@ -234,12 +234,12 @@ fn render_empty_state(ui: &mut egui::Ui) {
     let dots = &["", ".", "..", "..."][phase];
     ui.add_space(8.0);
     ui.label(
-        egui::RichText::new(format!("Waiting for topics on DDS domain{dots}"))
+        egui::RichText::new(format!("Waiting for topics{dots}"))
             .color(INFO_COLOR)
             .italics(),
     );
     ui.label(
-        egui::RichText::new("No ROS 2 nodes discovered yet.")
+        egui::RichText::new("No topics discovered on the connection yet.")
             .color(egui::Color32::from_rgb(120, 120, 120))
             .small(),
     );
@@ -866,15 +866,13 @@ mod tests {
         // No TopicInfo entities -- the system should render the empty state.
         let texts = rendered_texts(&mut app);
         assert!(
-            texts
-                .iter()
-                .any(|t| t.contains("Waiting for topics on DDS domain")),
+            texts.iter().any(|t| t.contains("Waiting for topics")),
             "Expected waiting message, found: {texts:?}"
         );
         assert!(
             texts
                 .iter()
-                .any(|t| t.contains("No ROS 2 nodes discovered yet.")),
+                .any(|t| t.contains("No topics discovered on the connection yet.")),
             "Expected secondary message, found: {texts:?}"
         );
     }

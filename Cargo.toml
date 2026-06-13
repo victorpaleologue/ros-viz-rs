@@ -18,6 +18,16 @@ no ROS installation needed."""
 depends = "$auto"
 section = "science"
 
+# cargo-generate-rpm reads this; `auto-req` lets rpmbuild discover the shared
+# library dependencies (alsa, udev, wayland/X) from the linked binary.
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/ros-viz-rs", dest = "/usr/bin/ros-viz-rs", mode = "0755" },
+    { source = "LICENSE", dest = "/usr/share/doc/ros-viz-rs/LICENSE", mode = "0644" },
+    { source = "README.md", dest = "/usr/share/doc/ros-viz-rs/README.md", mode = "0644" },
+]
+auto-req = "auto"
+
 
 [features]
 default = ["ros2", "rosbridge"]
