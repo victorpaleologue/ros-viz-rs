@@ -191,6 +191,19 @@
     const demoButton = document.getElementById("demo");
     let started = false;
 
+    // The build targets WebGPU (needed for the egui topics panel). Browsers
+    // without it can't run the demo, so say so clearly instead of failing
+    // with a blank canvas.
+    if (!navigator.gpu) {
+      loading.innerHTML =
+        '<span>This demo needs <strong>WebGPU</strong>, which your browser ' +
+        "doesn't expose. Try a recent Chrome, Edge, Safari 18+, or Firefox, " +
+        "or grab the native app from " +
+        '<a href="https://github.com/victorpaleologue/ros-viz-rs/releases" ' +
+        'style="color: var(--accent)">Releases</a>.</span>';
+      throw new Error("WebGPU unavailable");
+    }
+
     function launch(url) {
       if (started) {
         // The Bevy app owns the canvas for the page's lifetime; switching
