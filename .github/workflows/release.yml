@@ -225,6 +225,9 @@ jobs:
           cargo install wasm-pack --locked
           wasm-pack build --target web --out-dir web/pkg -- \
             --no-default-features --features rosbridge
+          # wasm-pack copies the crate README (about the native tool); the
+          # npm page wants the browser-usage one instead.
+          cp web/npm-README.md web/pkg/README.md
       - name: Publish to npm
         working-directory: web/pkg
         env:
