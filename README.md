@@ -54,6 +54,16 @@ cargo run --example urdf_view -- robot.urdf --joint elbow_joint=1.2 \
 cargo run --example fk_probe -- robot.urdf shoulder_lift_joint=-1.57
 ```
 
+Robots whose meshes aren't on disk render as a skeleton of markers. To see
+the real NAO meshes, install them once (they're CC BY-NC-ND, so not bundled
+here) and point `--package` at them:
+
+```bash
+# the official installer; see github.com/ros-naoqi/nao_meshes2
+cargo run --example urdf_view -- assets/nao_robot.urdf \
+    --package nao_meshes=/path/to/nao_meshes
+```
+
 More tools live in [examples/](examples/) (topic watching, URDF download).
 
 ## Testing philosophy

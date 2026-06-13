@@ -97,3 +97,24 @@ The browser cannot speak DDS. The standard bridges, in order of ubiquity:
 The wasm build compiles the same `scene/`, `robot/`, `ui/` code with the
 `rosbridge` connection only, plus an embedded-demo mode that drives the
 emulator locally (used by the GitHub Pages demo).
+
+## Adding a transport (issue #17)
+
+The seam is `src/topics.rs`: a backend's only job is to discover topics into
+`TopicInfo` entities and attach the type-erased subscription/publisher
+handles plus reflected `serde_json::Value`s. Nothing downstream (UI, scene,
+your code) knows which transport produced them. To add Zenoh, the Foxglove
+WebSocket protocol, or raw DDS:
+
+1. Add a feature flag in `Cargo.toml` (mirror `rosbridge`), behind which the
+   transport's deps live.
+2. Add a `Plugin` (mirror `src/rosbridge.rs` or `src/ros_plugin.rs`) that, on
+   `Update`, reconciles the live topic set into `TopicInfo` entities and
+   feeds `/robot_description` + `/joint_states` into the existing resources.
+3. Reuse `ros_msgs`/`messages` for payloads — the structs already serialize
+   to both CDR (DDS/Foxglove) and JSON (rosbridge), so no new schema work.
+4. Wire it into `app::build_app` next to the existing backends.
+
+No abstract `Transport` trait is introduced on purpose: the ECS components
+*are* the interface. This keeps each backend free to use its natural API
+(async sockets, DDS callbacks) without a lowest-common-denominator wrapper.
