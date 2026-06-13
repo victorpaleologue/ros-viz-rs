@@ -22,6 +22,16 @@ pub struct LoadedMesh {
 }
 
 /// Resolves URDF mesh URIs to local file paths.
+///
+/// # Trust boundary
+///
+/// A URDF mesh URI is attacker-controlled when the description arrives from
+/// the network (rosbridge, the web demo). Left unconstrained, a malicious
+/// URDF could point at `file:///etc/passwd` or escape a package directory
+/// with `../../`. For a local desktop tool reading your own files this is
+/// fine and the resolver stays permissive by default; when the URDF is
+/// untrusted, set [`with_sandbox_root`](Self::with_sandbox_root) so every
+/// resolved path is canonicalized and confined to one directory.
 #[derive(Debug, Clone, Default)]
 pub struct MeshResolver {
     /// Explicit `package name -> directory` mappings (CLI `--package`).
@@ -29,6 +39,10 @@ pub struct MeshResolver {
     /// Directories tried in order when the package is not mapped; the
     /// URDF file's own directory and its parent are natural candidates.
     pub fallback_dirs: Vec<PathBuf>,
+    /// When set, every resolved path must canonicalize to a location inside
+    /// this directory; resolutions escaping it (`..`, symlinks, absolute
+    /// `file://`) are rejected. `None` (the default) trusts the URDF.
+    pub sandbox_root: Option<PathBuf>,
 }
 
 impl MeshResolver {
@@ -46,6 +60,7 @@ impl MeshResolver {
         Self {
             packages: HashMap::new(),
             fallback_dirs,
+            sandbox_root: None,
         }
     }
 
@@ -55,42 +70,64 @@ impl MeshResolver {
         self
     }
 
+    /// Confine all resolutions to `root`: a resolved path is only returned
+    /// if it canonicalizes to a location inside `root`. Use this for
+    /// untrusted URDFs (see the type-level trust-boundary note).
+    pub fn with_sandbox_root(mut self, root: impl Into<PathBuf>) -> Self {
+        self.sandbox_root = Some(root.into());
+        self
+    }
+
     /// Resolve a URDF mesh URI to an existing file path.
     ///
     /// Supported forms: `package://pkg/rest`, `file:///abs/path`, and plain
     /// (possibly relative) paths. For `package://`, the mapped directory is
     /// tried first, then each fallback directory joined with `rest` (with
-    /// and without the package-name prefix).
+    /// and without the package-name prefix). A
+    /// [sandbox root](Self::with_sandbox_root), if set, rejects any
+    /// candidate that escapes it.
     pub fn resolve(&self, uri: &str) -> Option<PathBuf> {
         if let Some(rest) = uri.strip_prefix("package://") {
             let (package, rel) = rest.split_once('/')?;
-            if let Some(dir) = self.packages.get(package) {
-                let path = dir.join(rel);
-                if path.exists() {
-                    return Some(path);
-                }
+            if let Some(dir) = self.packages.get(package)
+                && let Some(path) = self.accept(dir.join(rel))
+            {
+                return Some(path);
             }
             for dir in &self.fallback_dirs {
                 for candidate in [dir.join(rel), dir.join(package).join(rel)] {
-                    if candidate.exists() {
-                        return Some(candidate);
+                    if let Some(path) = self.accept(candidate) {
+                        return Some(path);
                     }
                 }
             }
             return None;
         }
         if let Some(path) = uri.strip_prefix("file://") {
-            let path = PathBuf::from(path);
-            return path.exists().then_some(path);
+            return self.accept(PathBuf::from(path));
         }
-        let path = PathBuf::from(uri);
-        if path.exists() {
+        if let Some(path) = self.accept(PathBuf::from(uri)) {
             return Some(path);
         }
         self.fallback_dirs
             .iter()
-            .map(|d| d.join(uri))
-            .find(|p| p.exists())
+            .find_map(|d| self.accept(d.join(uri)))
+    }
+
+    /// Accept a candidate path: it must exist and, under a sandbox root,
+    /// canonicalize to a location inside that root.
+    fn accept(&self, path: PathBuf) -> Option<PathBuf> {
+        if !path.exists() {
+            return None;
+        }
+        let Some(root) = &self.sandbox_root else {
+            return Some(path);
+        };
+        // canonicalize() resolves `..` and symlinks and requires existence,
+        // so the containment check cannot be fooled by either.
+        let canonical = path.canonicalize().ok()?;
+        let root = root.canonicalize().ok()?;
+        canonical.starts_with(&root).then_some(canonical)
     }
 }
 
@@ -280,5 +317,48 @@ endsolid tri
         // Plain relative path against fallback dir.
         let resolver = MeshResolver::for_urdf_file(dir.path().join("robot.urdf"));
         assert_eq!(resolver.resolve("meshes/part.stl"), Some(file));
+    }
+
+    #[test]
+    fn sandbox_root_blocks_traversal_and_absolute_escapes() {
+        // Layout: <root>/pkg/meshes/part.stl  +  <root>/secret.stl
+        let root = tempfile::tempdir().expect("tempdir");
+        let meshes = root.path().join("pkg/meshes");
+        fs::create_dir_all(&meshes).expect("mkdir");
+        let inside = meshes.join("part.stl");
+        fs::write(&inside, TRIANGLE_STL).expect("write inside");
+        let secret = root.path().join("secret.stl");
+        fs::write(&secret, TRIANGLE_STL).expect("write secret");
+
+        // Sandbox confined to <root>/pkg.
+        let resolver = MeshResolver::default()
+            .with_package("pkg", root.path().join("pkg"))
+            .with_sandbox_root(root.path().join("pkg"));
+
+        // A legitimate in-sandbox mesh resolves (to its canonical path).
+        let resolved = resolver
+            .resolve("package://pkg/meshes/part.stl")
+            .expect("in-sandbox mesh resolves");
+        assert_eq!(resolved, inside.canonicalize().unwrap());
+
+        // `..` traversal escaping the sandbox is rejected even though the
+        // file exists.
+        assert_eq!(
+            resolver.resolve("package://pkg/meshes/../../secret.stl"),
+            None,
+            "traversal outside the sandbox must be refused"
+        );
+
+        // An absolute file:// pointing outside the sandbox is rejected.
+        let abs = format!("file://{}", secret.display());
+        assert_eq!(
+            resolver.resolve(&abs),
+            None,
+            "absolute path outside the sandbox must be refused"
+        );
+
+        // Without a sandbox, the same absolute path resolves (trusted mode).
+        let trusting = MeshResolver::default();
+        assert_eq!(trusting.resolve(&abs), Some(secret));
     }
 }
