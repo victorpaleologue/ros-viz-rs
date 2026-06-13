@@ -30,10 +30,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install wasm-pack
         run: cargo install wasm-pack --locked
-      - name: Build wasm package
+      - name: Build wasm packages (WebGL2 + WebGPU)
         run: |
+          # Universal bundle: WebGL2, renders the 3D view in any browser.
           wasm-pack build --target web --out-dir web/pkg -- \
             --no-default-features --features rosbridge
+          # WebGPU bundle: adds the egui topics panel. web/index.html loads
+          # this one when a WebGPU adapter is available, else falls back to
+          # web/pkg above.
+          wasm-pack build --target web --out-dir web/pkg-webgpu -- \
+            --no-default-features --features rosbridge,webgpu
       - uses: actions/upload-pages-artifact@v4
         with:
           path: web/

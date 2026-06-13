@@ -35,6 +35,12 @@ default = ["ros2", "rosbridge"]
 ros2 = ["dep:ros2-client", "dep:rustdds", "dep:futures", "dep:async-channel"]
 # rosbridge JSON/WebSocket transport; works natively and on wasm.
 rosbridge = ["dep:ewebsock"]
+# Use the WebGPU wasm backend instead of WebGL2. WebGPU is required for the
+# egui topics panel to render in the browser (WebGL2 lacks
+# TEXTURE_BINDING_ARRAY). The web build ships both: a universal WebGL2
+# bundle (3D view everywhere) and a WebGPU bundle (adds the panel), selected
+# by adapter detection in web/index.html. Inert on native.
+webgpu = ["bevy/webgpu"]
 
 [dependencies]
 bevy_egui = "0.39"
@@ -42,12 +48,10 @@ anyhow = "1"
 clap = { version = "4.5", features = ["derive", "env"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
-# `webgpu` makes the wasm build use the WebGPU backend instead of WebGL2.
-# WebGL2 lacks TEXTURE_BINDING_ARRAY, which bevy_egui needs — so the topics
-# panel (view + edit) only renders in the browser under WebGPU. On native
-# this feature is inert (desktop uses Vulkan/Metal/DX). Browsers without
-# WebGPU are caught by a capability check in web/index.html. (#26)
-bevy = { version = "0.18", features = ["webgpu"] }
+# The web backend is selected by our own `webgpu` feature (see [features]),
+# so the WebGL2 and WebGPU bundles build from the same source. Plain default
+# features here = WebGL2/native.
+bevy = "0.18"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # serde derives Deserialize for arrays only up to 32 elements; ROS covariance

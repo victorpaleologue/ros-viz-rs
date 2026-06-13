@@ -98,6 +98,45 @@ The wasm build compiles the same `scene/`, `robot/`, `ui/` code with the
 `rosbridge` connection only, plus an embedded-demo mode that drives the
 emulator locally (used by the GitHub Pages demo).
 
+### Two web bundles (WebGL2 + WebGPU)
+
+The page ships both backends and picks at load time (`web/index.html`):
+
+- **WebGL2** (`web/pkg`, default features) — the universal bundle. Renders
+  the 3D view in any browser. bevy_egui can't render here (WebGL2 lacks
+  `TEXTURE_BINDING_ARRAY`), so the topics panel is absent.
+- **WebGPU** (`web/pkg-webgpu`, `--features webgpu`) — adds the egui topics
+  panel (view + edit). Chosen only when `navigator.gpu.requestAdapter()`
+  actually returns an adapter, so browsers/devices without working WebGPU
+  fall back to WebGL2 instead of hard-panicking.
+
+Both bundles are the *same Rust source*; the only difference is the wgpu
+backend feature.
+
+### Testing axiom: native correctness ⇒ web correctness
+
+The web build adds exactly one variable over the native build — the wgpu
+backend. Everything that decides what's on screen (URDF parsing, FK, scene
+construction, the egui panel's layout/widgets, the rosbridge transport) is
+backend-agnostic and shared. So instead of re-qualifying the whole app in a
+browser on every change, the suite is targeted at the seams:
+
+| Claim | Verified by | Where |
+|---|---|---|
+| Robot parses, poses (FK), renders | headless GPU snapshot + vision | `tests/visual_regression.rs` (native Metal/Vulkan) |
+| rosbridge transport → topics/values | in-process fake server | rosbridge e2e test (native) |
+| egui panel layout (view + edit) | egui shape-text capture | `src/topics_view.rs` tests (native) |
+| wasm actually renders in a browser | Playwright on the WebGL2 bundle | the NAO demo + a mock-rosbridge connection render in headless Chromium |
+| WebGPU bundle is selected & boots | adapter detection + bundle builds | `web/index.html`; both bundles compile in CI |
+
+The standing assumption, made explicit so it can be re-checked when it
+changes: **if the shared code renders correctly natively, and the chosen
+wgpu backend initializes in the browser, the web build renders correctly.**
+The only thing this leaves unverifiable in headless CI is the *pixels* of
+the WebGPU bundle (no GPU adapter in CI) — covered by the WebGL2 in-browser
+render plus the native egui-panel test, with a final human glance at the
+deployed demo on a WebGPU browser.
+
 ## Adding a transport (issue #17)
 
 The seam is `src/topics.rs`: a backend's only job is to discover topics into

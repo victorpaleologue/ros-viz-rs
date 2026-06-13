@@ -183,19 +183,19 @@
   </footer>
 
   <script type="module">
-    import init, { start } from "./pkg/ros_viz_rs.js";
-
     const loading = document.getElementById("loading");
     const urlInput = document.getElementById("rosbridge-url");
     const connectButton = document.getElementById("connect");
     const demoButton = document.getElementById("demo");
     let started = false;
+    let wasm = null;
 
-    // The build targets WebGPU (needed for the egui topics panel). A browser
-    // can expose navigator.gpu yet still fail to provide an adapter (GPU
-    // blocklisted, headless, flag off) — in which case Bevy would hard-panic
-    // with "Unable to find a GPU". So actually request an adapter and, if
-    // there's none, show a clear message instead of a blank/crashed canvas.
+    // Two bundles ship: a universal WebGL2 one (3D view everywhere) and a
+    // WebGPU one that additionally renders the egui topics panel (WebGL2
+    // lacks TEXTURE_BINDING_ARRAY, which bevy_egui needs). Pick by probing
+    // for a *working* adapter — a browser can expose navigator.gpu yet fail
+    // requestAdapter() (GPU blocklisted, headless, flag off), and a WebGPU
+    // bundle would hard-panic there.
     async function hasWebGpu() {
       if (!navigator.gpu) return false;
       try {
@@ -204,15 +204,10 @@
         return false;
       }
     }
-    if (!(await hasWebGpu())) {
-      loading.innerHTML =
-        '<span>This demo needs <strong>WebGPU</strong>, which your browser ' +
-        "doesn't provide here. Try a recent Chrome, Edge, Safari 18+, or " +
-        "Firefox (and check hardware acceleration is on), or grab the native " +
-        'app from <a href="https://github.com/victorpaleologue/ros-viz-rs/releases" ' +
-        'style="color: var(--accent)">Releases</a>.</span>';
-      throw new Error("WebGPU unavailable");
-    }
+
+    const webgpu = await hasWebGpu();
+    const bundle = webgpu ? "./pkg-webgpu/ros_viz_rs.js" : "./pkg/ros_viz_rs.js";
+    wasm = await import(bundle);
 
     function launch(url) {
       if (started) {
@@ -225,10 +220,10 @@
       }
       started = true;
       loading.remove();
-      start(url ?? undefined);
+      wasm.start(url ?? undefined);
     }
 
-    await init();
+    await wasm.default();
     connectButton.disabled = false;
     demoButton.disabled = false;
     connectButton.onclick = () => launch(urlInput.value.trim() || null);

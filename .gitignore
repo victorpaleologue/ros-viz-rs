@@ -2,3 +2,4 @@
 .test_outputs/
 *.dmg
 web/pkg/
+web/pkg-webgpu/
