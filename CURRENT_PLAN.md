@@ -22,15 +22,20 @@ Issue tracker: <https://github.com/victorpaleologue/ros-viz-rs/issues>
   releases: crates.io + npm jobs, .dmg/.deb/.exe artifacts (#11–#14)
 - [x] Crate-level rustdoc for docs.rs (#16)
 
+## Recently shipped
+
+- [x] #18 O(1) topic discovery; #19 mesh resolver sandbox_root; #20 unified
+  env-test lock; #21 web lighting fix; #22 maintainer doc; #23 loading
+  indicator; #24 npm README; #25 .rpm packaging
+
 ## Open
 
-- [ ] #10 NAO meshes: license-gated installer (CC BY-NC-ND) — fetch in CI
-  container via the official package, and/or HTTP mesh resolver for wasm
-- [ ] #17 Zenoh / Foxglove WebSocket transport candidates
-- [ ] #18 O(1) topic discovery bookkeeping
-- [ ] #19 MeshResolver trust boundary (sandbox_root, wasm allowlist)
-- [ ] #20 unify env-var test locking
-- [ ] #21 web polish: brighter WebGL lighting, egui panel on wasm
+- [ ] #10 NAO meshes: CC BY-NC-ND, can't be vendored/hosted. Native recipe
+  in README; web mesh fetch tracked in #27.
+- [ ] #17 Zenoh / Foxglove WebSocket transport candidates (seam + recipe
+  ready in Architecture.md)
+- [ ] #26 egui topics panel on web (needs WebGPU)
+- [ ] #27 load meshes over HTTP on the web build (async fetch + allowlist)
 
 ## Notes
 
