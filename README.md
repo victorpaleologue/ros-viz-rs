@@ -82,6 +82,7 @@ Cargo.toml; merging to main auto-tags and publishes a GitHub release with
 macOS (.dmg), Linux (.deb) and Windows (.exe) artifacts.
 
 - Architecture notes: [docs/wiki/Architecture.md](docs/wiki/Architecture.md)
+- Maintainer setup (secrets, releases): [docs/MAINTAINER.md](docs/MAINTAINER.md)
 - Living plan: [CURRENT_PLAN.md](CURRENT_PLAN.md)
 - Issues: <https://github.com/victorpaleologue/ros-viz-rs/issues>
 
