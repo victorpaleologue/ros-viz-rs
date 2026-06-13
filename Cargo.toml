@@ -1,6 +1,6 @@
 [package]
 name = "ros-viz-rs"
-version = "0.3.0"
+version = "1.0.0"
 edition = "2024"
 description = "Generic ROS 2 robot visualizer — Bevy + egui, URDF + forward kinematics, no ROS installation required"
 license = "MIT"
