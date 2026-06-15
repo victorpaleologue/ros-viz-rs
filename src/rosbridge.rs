@@ -69,8 +69,15 @@ struct BridgePublisher {
 
 impl DynPublisher for BridgePublisher {
     fn publish(&self, value: &ron::Value) -> Result<(), String> {
-        // RON seam value -> JSON wire (the rosbridge protocol is JSON).
-        let wire: Value = serde_json::to_value(value).map_err(|e| e.to_string())?;
+        // RON seam value -> JSON wire (the rosbridge protocol is JSON). JSON
+        // cannot represent non-finite floats (NaN/±inf), so such a value
+        // fails here; the DDS and Zenoh transports carry it fine.
+        let wire: Value = serde_json::to_value(value).map_err(|e| {
+            format!(
+                "cannot encode value as JSON for the rosbridge wire \
+                 (non-finite floats like NaN/inf have no JSON form): {e}"
+            )
+        })?;
         self.outbox
             .send(json!({"op": "publish", "topic": self.topic, "msg": wire}));
         Ok(())

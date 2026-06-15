@@ -58,7 +58,9 @@ fn dds_type_to_ros(type_name: &str) -> String {
 pub fn parse_liveliness_token(key: &str) -> Option<ZenohTopic> {
     let parts: Vec<&str> = key.split('/').collect();
     // @ros2_lv/domain/session/node/entity/kind/enclave/ns/node_name/
-    //   mangled_name/type/type_hash/qos  -> 13 segments
+    //   mangled_name/type/type_hash/qos  -> 13 segments. We index up to the
+    //   type hash (parts[11]) and never read the trailing qos, so require at
+    //   least 12 segments rather than the full 13.
     if parts.len() < 12 || parts[0] != "@ros2_lv" {
         return None;
     }
@@ -262,8 +264,12 @@ async fn subscribe_joint_states(
     shared: Arc<Mutex<ZenohShared>>,
     data_key: String,
 ) {
-    let Ok(sub) = session.declare_subscriber(data_key).await else {
-        return;
+    let sub = match session.declare_subscriber(data_key).await {
+        Ok(sub) => sub,
+        Err(e) => {
+            tracing::error!("zenoh: joint_states subscribe: {e}");
+            return;
+        }
     };
     tokio::spawn(async move {
         while let Ok(sample) = sub.recv_async().await {

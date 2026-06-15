@@ -23,7 +23,8 @@
 //!   entity carries the conversion.
 //! - [`topics`] — the transport seam: every connection backend discovers
 //!   topics into [`topics::TopicInfo`] entities and attaches type-erased
-//!   subscription/publisher handles plus reflected JSON values. Consumers
+//!   subscription/publisher handles plus reflected [`ron::Value`] trees
+//!   (lossless: distinct integer widths, non-finite floats). Consumers
 //!   (the UI, your code) never see transport types.
 //! - [`messages`] + [`ros_msgs`] — 50 standard ROS message types as plain
 //!   serde structs and a registry mapping type names to reflection (and,

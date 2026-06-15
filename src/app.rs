@@ -28,17 +28,21 @@ use tracing_subscriber::EnvFilter;
 use crate::options::Options;
 #[cfg(feature = "ros2")]
 use crate::robot::RobotModel;
-#[cfg(any(feature = "ros2", feature = "rosbridge"))]
+#[cfg(any(feature = "ros2", feature = "rosbridge", feature = "zenoh"))]
 use crate::robot::mesh::MeshResolver;
 #[cfg(feature = "ros2")]
 use crate::ros_msgs;
 #[cfg(feature = "ros2")]
 use crate::ros_plugin::{RosPlugin, RosSession};
-#[cfg(feature = "ros2")]
+// `JointPositions` is fed in app.rs only under DDS; the headless-build test
+// (always compiled) also asserts on it.
+#[cfg(any(feature = "ros2", test))]
 use crate::scene::JointPositions;
-#[cfg(any(feature = "ros2", feature = "rosbridge"))]
+// `PendingRobot` + `spawn_robot` back `spawn_pending_robot`, used by every
+// streaming transport (rosbridge, zenoh) and the always-compiled test.
+#[cfg(any(feature = "ros2", feature = "rosbridge", feature = "zenoh", test))]
 use crate::scene::PendingRobot;
-#[cfg(any(feature = "ros2", feature = "rosbridge"))]
+#[cfg(any(feature = "ros2", feature = "rosbridge", feature = "zenoh"))]
 use crate::scene::spawn_robot;
 use crate::scene::{RobotHandle, RobotScenePlugin, spawn_viewing_rig};
 #[cfg(not(target_arch = "wasm32"))]
@@ -362,7 +366,7 @@ fn receive_joint_states(
 }
 
 /// Spawn the robot scene once a model has been received.
-#[cfg(any(feature = "ros2", feature = "rosbridge"))]
+#[cfg(any(feature = "ros2", feature = "rosbridge", feature = "zenoh"))]
 fn spawn_pending_robot(
     mut commands: Commands,
     mut pending: ResMut<PendingRobot>,

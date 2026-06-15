@@ -5,11 +5,11 @@
 //!
 //! - create a type-erased subscription ([`DynSubscription`]) whose
 //!   [`poll`](DynSubscription::poll) drains received messages and reflects the
-//!   latest one into a [`serde_json::Value`] tree,
+//!   latest one into a lossless [`ron::Value`] tree,
 //! - create a type-erased publisher ([`DynPublisher`]) whose
-//!   [`publish`](DynPublisher::publish) converts a [`serde_json::Value`] back
+//!   [`publish`](DynPublisher::publish) converts a [`ron::Value`] back
 //!   into the typed struct and sends it,
-//! - produce a default [`serde_json::Value`] to seed edit buffers.
+//! - produce a default [`ron::Value`] to seed edit buffers.
 //!
 //! Supporting a new message type therefore takes two steps: define the serde
 //! struct in [`crate::ros_msgs`] and add one line to the
@@ -48,7 +48,7 @@ pub(crate) fn to_value<T: serde::Serialize>(msg: &T) -> Result<Value, String> {
 /// A type-erased ROS 2 subscription producing reflected values.
 pub trait DynSubscription: Send + Sync {
     /// Drain all pending messages and return the latest one reflected as a
-    /// [`serde_json::Value`], or `None` if nothing new arrived.
+    /// [`ron::Value`], or `None` if nothing new arrived.
     fn poll(&self) -> Option<Value>;
 }
 
@@ -323,6 +323,8 @@ impl MessageRegistry {
 mod tests {
     use super::*;
     use serde_json::json;
+    // Only the DDS round-trip helpers poll with a timeout.
+    #[cfg(feature = "ros2")]
     use std::time::{Duration, Instant};
 
     /// Build a lossless [`ron::Value`] from a `serde_json!` literal, for test
@@ -451,9 +453,18 @@ mod tests {
             velocity: vec![],
             effort: vec![],
         };
-        let value = serde_json::to_value(&msg).unwrap();
-        assert_eq!(value["name"], json!(["a", "b"]));
-        let back: ros_msgs::JointState = serde_json::from_value(value).unwrap();
+        // Exercise the actual reflection seam (`to_value` -> `into_rust`),
+        // not a bare serde_json round trip.
+        let value = to_value(&msg).unwrap();
+        let names: Vec<String> = match &value {
+            Value::Map(m) => m
+                .get(&Value::String("name".into()))
+                .and_then(|v| v.clone().into_rust().ok())
+                .unwrap_or_default(),
+            _ => Vec::new(),
+        };
+        assert_eq!(names, vec!["a".to_string(), "b".to_string()]);
+        let back: ros_msgs::JointState = value.into_rust().unwrap();
         assert_eq!(back, msg);
     }
 

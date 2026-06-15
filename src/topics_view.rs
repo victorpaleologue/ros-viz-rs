@@ -8,7 +8,7 @@
 //! - [`TopicInfo`] – a Bevy [`Component`] carrying a topic name.
 //! - [`TopicsTreePlugin`] – Bevy + egui plugin for the collapsible tree panel.
 //!
-//! Topic values are reflected [`serde_json::Value`] trees (see
+//! Topic values are reflected [`ron::Value`] trees (see
 //! [`crate::messages`]); rendering is fully generic: any message type present
 //! in the [`MessageRegistry`] gets a recursive read-only view for
 //! subscriptions and recursive editable widgets for publishers.
@@ -571,18 +571,43 @@ fn render_scalar_edit(ui: &mut egui::Ui, id: egui::Id, value: &mut Value) -> boo
             false
         }
         Value::Number(n) => {
-            // Keep ints as ints and floats as floats so reflection back to
-            // the typed message holds (serde coerces I64/F64 to the field's
-            // exact width). Canonicalize to I64/F64 on edit.
-            if matches!(n, Number::F32(_) | Number::F64(_)) {
-                let mut x = n.into_f64();
-                if ui.add(egui::DragValue::new(&mut x).speed(0.05)).changed() {
-                    *value = Value::Number(Number::new(x));
+            // Edit each integer in its own width so reflection back to the
+            // typed message preserves the field's type: RON coerces by range
+            // on publish, so a wrong-sign or out-of-range value (e.g. a
+            // negative dragged into a `u8`, or a `u64` past 2^53) would fail.
+            // Editing through the variant's own `&mut` keeps the type tag and
+            // gives the drag widget the right bounds. Floats canonicalize to
+            // f64; RON widens back to the field on publish.
+            macro_rules! drag {
+                ($v:expr) => {{
+                    let mut x = *$v;
+                    if ui.add(egui::DragValue::new(&mut x)).changed() {
+                        *$v = x;
+                    }
+                }};
+            }
+            match n {
+                Number::F32(_) | Number::F64(_) => {
+                    let mut x = n.into_f64();
+                    if ui.add(egui::DragValue::new(&mut x).speed(0.05)).changed() {
+                        *n = Number::new(x);
+                    }
                 }
-            } else {
-                let mut x = n.into_f64() as i64;
-                if ui.add(egui::DragValue::new(&mut x)).changed() {
-                    *value = Value::Number(Number::new(x));
+                Number::I8(v) => drag!(v),
+                Number::I16(v) => drag!(v),
+                Number::I32(v) => drag!(v),
+                Number::I64(v) => drag!(v),
+                Number::U8(v) => drag!(v),
+                Number::U16(v) => drag!(v),
+                Number::U32(v) => drag!(v),
+                Number::U64(v) => drag!(v),
+                // 128-bit variants are rare in ROS messages; edit through f64
+                // (precision-limited above 2^53) rather than panic.
+                other => {
+                    let mut x = other.into_f64();
+                    if ui.add(egui::DragValue::new(&mut x)).changed() {
+                        *other = Number::new(x);
+                    }
                 }
             }
             false
