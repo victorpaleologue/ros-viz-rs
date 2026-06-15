@@ -1,7 +1,15 @@
+# Published to crates.io as `ros-viz` (so `cargo install ros-viz` is the short
+# command). The repository, distributed packages, app bundles and the npm
+# package keep the established `ros-viz-rs` name — see the [lib], [[bin]] and
+# [package.metadata.*] sections below, which pin those back.
 [package]
-name = "ros-viz-rs"
-version = "1.0.0"
+name = "ros-viz"
+version = "1.1.0"
 edition = "2024"
+# Two bin targets (ros-viz + the ros-viz-rs alias) make a bare `cargo run`
+# ambiguous; pick the canonical one so `cargo run`/`cargo run --release` keep
+# working as documented.
+default-run = "ros-viz"
 description = "Generic ROS 2 robot visualizer — Bevy + egui, URDF + forward kinematics, no ROS installation required"
 license = "MIT"
 repository = "https://github.com/victorpaleologue/ros-viz-rs"
@@ -11,6 +19,8 @@ categories = ["visualization", "science::robotics"]
 exclude = ["test-data", ".test_outputs", ".github", "docs"]
 
 [package.metadata.deb]
+# Keep the Debian package name independent of the crate rename to `ros-viz`.
+name = "ros-viz-rs"
 extended-description = """\
 Visualize any ROS 2 robot: URDF rendering with meshes, forward kinematics \
 driven by /joint_states, and a live topic inspector. Talks DDS directly — \
@@ -21,6 +31,8 @@ section = "science"
 # cargo-generate-rpm reads this; `auto-req` lets rpmbuild discover the shared
 # library dependencies (alsa, udev, wayland/X) from the linked binary.
 [package.metadata.generate-rpm]
+# Keep the RPM package name as `ros-viz-rs` despite the crate rename.
+name = "ros-viz-rs"
 assets = [
     { source = "target/release/ros-viz-rs", dest = "/usr/bin/ros-viz-rs", mode = "0755" },
     { source = "LICENSE", dest = "/usr/share/doc/ros-viz-rs/LICENSE", mode = "0644" },
@@ -86,8 +98,25 @@ ron = "0.12.1"
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
 
+# The library keeps the `ros_viz_rs` name even though the package is now
+# `ros-viz`: it keeps every `use ros_viz_rs::...` (tests, examples, the bins)
+# compiling unchanged, and keeps the wasm-pack output filenames stable
+# (web/index.html imports `pkg/ros_viz_rs.js`), so the live demo is untouched.
 [lib]
+name = "ros_viz_rs"
 crate-type = ["cdylib", "rlib"]
+
+# Two binaries from one entrypoint. `ros-viz` is the short command installed by
+# `cargo install ros-viz`; `ros-viz-rs` is an alias kept so the distributed
+# packages, the macOS/Windows artifacts and the existing scripts/docs that call
+# the binary by that name keep working.
+[[bin]]
+name = "ros-viz"
+path = "src/main.rs"
+
+[[bin]]
+name = "ros-viz-rs"
+path = "src/main.rs"
 
 [dev-dependencies]
 chrono = ">=0.4.35"

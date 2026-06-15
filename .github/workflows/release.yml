@@ -225,6 +225,11 @@ jobs:
           cargo install wasm-pack --locked
           wasm-pack build --target web --out-dir web/pkg -- \
             --no-default-features --features rosbridge
+          # The crate is published to crates.io as `ros-viz`, but the browser
+          # package keeps its established `ros-viz-rs` name (matches the import
+          # in web/npm-README.md), so override the name wasm-pack derived from
+          # the crate.
+          ( cd web/pkg && npm pkg set name=ros-viz-rs )
           # wasm-pack copies the crate README (about the native tool); the
           # npm page wants the browser-usage one instead.
           cp web/npm-README.md web/pkg/README.md

@@ -27,6 +27,17 @@ Robots without meshes on disk degrade gracefully to a skeleton of markers:
 
 ![NAO skeleton fallback](docs/images/nao_skeleton.png)
 
+## Install
+
+```bash
+cargo install ros-viz           # then run `ros-viz` (alias: `ros-viz-rs`)
+```
+
+Pre-built macOS (`.dmg`), Linux (`.deb`/`.rpm`) and Windows (`.exe`) artifacts
+are attached to each [GitHub release](https://github.com/victorpaleologue/ros-viz-rs/releases).
+Building from crates.io needs the usual Bevy system libraries (on Linux:
+`libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev`).
+
 ## Quick start
 
 ```bash

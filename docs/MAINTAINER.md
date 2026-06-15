@@ -16,8 +16,17 @@ release and the platform binaries still publish.
 | `CARGO_REGISTRY_TOKEN` | `crates-io` job in `release.yml` | crates.io → Account Settings → API Tokens (scope: publish-update) |
 | `NPM_TOKEN` | `npm` job in `release.yml` | npmjs.com → Access Tokens → Granular/Automation token with publish rights |
 
-The package names `ros-viz-rs` are currently free on both registries; claim
-them with the first successful publish.
+To set `CARGO_REGISTRY_TOKEN`: sign in to <https://crates.io> with GitHub,
+verify your email under Account Settings, create an API token scoped to
+`publish-update`, and paste it into the repo secret. The next tagged release
+then publishes automatically (until then the `crates-io` job fails harmlessly).
+
+Registry names: the crate publishes to crates.io as **`ros-viz`** (so
+`cargo install ros-viz` works), while the npm/browser package keeps the
+**`ros-viz-rs`** name. Both are free today; the first successful publish on
+each registry claims them. `cargo install ros-viz` installs two equivalent
+commands, `ros-viz` and the `ros-viz-rs` alias; the distributed packages,
+app bundles and binaries stay branded `ros-viz-rs`.
 
 ## GitHub Pages
 
