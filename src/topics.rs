@@ -56,13 +56,20 @@ impl TopicInfo {
     }
 }
 
-/// Latest value received on a subscribed topic, reflected to JSON.
-#[derive(Component, Debug, Clone, Default, PartialEq)]
-pub struct TopicValue(pub Option<serde_json::Value>);
+/// Latest value received on a subscribed topic, reflected to a lossless
+/// [RON value](ron::Value) (preserves integer width and non-finite floats).
+#[derive(Component, Debug, Clone, PartialEq, Default)]
+pub struct TopicValue(pub Option<ron::Value>);
 
 /// The value being edited in the UI for a publishable topic.
-#[derive(Component, Debug, Clone, Default, PartialEq)]
-pub struct TopicEdit(pub serde_json::Value);
+#[derive(Component, Debug, Clone, PartialEq)]
+pub struct TopicEdit(pub ron::Value);
+
+impl Default for TopicEdit {
+    fn default() -> Self {
+        Self(ron::Value::Unit)
+    }
+}
 
 /// An active subscription delivering reflected values.
 #[derive(Component)]

@@ -21,6 +21,7 @@ use serde_json::{Value, json};
 
 use crate::messages::{DynPublisher, DynSubscription, MessageRegistry};
 use crate::robot::RobotModel;
+use crate::ros_msgs;
 use crate::scene::JointPositions;
 use crate::topics::{
     Publisher, Subscription, TopicEdit, TopicInfo, TopicKind, TopicValue, handle_publish_requests,
@@ -53,8 +54,10 @@ struct Inbox(Mutex<Option<Value>>);
 struct InboxSubscription(Arc<Inbox>);
 
 impl DynSubscription for InboxSubscription {
-    fn poll(&self) -> Option<Value> {
-        self.0.0.lock().unwrap_or_else(|p| p.into_inner()).take()
+    fn poll(&self) -> Option<ron::Value> {
+        // The wire is JSON; the seam is RON. Convert the latest wire value.
+        let wire = self.0.0.lock().unwrap_or_else(|p| p.into_inner()).take()?;
+        crate::messages::to_value(&wire).ok()
     }
 }
 
@@ -65,9 +68,11 @@ struct BridgePublisher {
 }
 
 impl DynPublisher for BridgePublisher {
-    fn publish(&self, value: &Value) -> Result<(), String> {
+    fn publish(&self, value: &ron::Value) -> Result<(), String> {
+        // RON seam value -> JSON wire (the rosbridge protocol is JSON).
+        let wire: Value = serde_json::to_value(value).map_err(|e| e.to_string())?;
         self.outbox
-            .send(json!({"op": "publish", "topic": self.topic, "msg": value}));
+            .send(json!({"op": "publish", "topic": self.topic, "msg": wire}));
         Ok(())
     }
 }
@@ -298,7 +303,7 @@ fn manage_topic_io(
         }));
         let default = registry
             .default_value(&info.type_name)
-            .unwrap_or(Value::Null);
+            .unwrap_or(ron::Value::Unit);
         commands.entity(entity).insert((
             Subscription(Box::new(InboxSubscription(inbox))),
             TopicValue(None),
@@ -326,10 +331,10 @@ fn feed_robot_from_topics(
                 if pending.0.is_some() || !robots.is_empty() {
                     continue;
                 }
-                let Some(xml) = value.get("data").and_then(Value::as_str) else {
+                let Ok(msg) = value.clone().into_rust::<ros_msgs::String>() else {
                     continue;
                 };
-                match RobotModel::from_urdf_str(xml) {
+                match RobotModel::from_urdf_str(&msg.data) {
                     Ok(model) => {
                         tracing::info!("rosbridge: received robot '{}'", model.name());
                         pending.0 = Some(Arc::new(model));
@@ -338,16 +343,10 @@ fn feed_robot_from_topics(
                 }
             }
             "/joint_states" => {
-                let names: Vec<String> = value
-                    .get("name")
-                    .and_then(|v| serde_json::from_value(v.clone()).ok())
-                    .unwrap_or_default();
-                let positions: Vec<f64> = value
-                    .get("position")
-                    .and_then(|v| serde_json::from_value(v.clone()).ok())
-                    .unwrap_or_default();
-                for (name, position) in names.into_iter().zip(positions) {
-                    joints.positions.insert(name, position);
+                if let Ok(js) = value.clone().into_rust::<ros_msgs::JointState>() {
+                    for (name, position) in js.name.into_iter().zip(js.position) {
+                        joints.positions.insert(name, position);
+                    }
                 }
             }
             _ => {}
@@ -358,6 +357,12 @@ fn feed_robot_from_topics(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The reflected value poll() yields the lossless [`ron::Value`] form of
+    /// the JSON wire value; build the expected value the same way.
+    fn rv(j: serde_json::Value) -> ron::Value {
+        ron::from_str(&ron::to_string(&j).unwrap()).unwrap()
+    }
 
     #[test]
     fn type_name_conversions() {
@@ -377,7 +382,7 @@ mod tests {
         assert_eq!(subscription.poll(), None);
         *inbox.0.lock().unwrap() = Some(json!({"data": 1}));
         *inbox.0.lock().unwrap() = Some(json!({"data": 2}));
-        assert_eq!(subscription.poll(), Some(json!({"data": 2})));
+        assert_eq!(subscription.poll(), Some(rv(json!({"data": 2}))));
         assert_eq!(subscription.poll(), None);
     }
 }

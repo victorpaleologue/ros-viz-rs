@@ -6,7 +6,7 @@
 //! ROS 2 **publisher** and attaches [`Publisher`] + [`TopicEdit`] components.
 //!
 //! Message types are resolved through the [`MessageRegistry`] resource:
-//! values flow as reflected [`serde_json::Value`] trees, so this module knows
+//! values flow as reflected [`ron::Value`] trees, so this module knows
 //! nothing about concrete message structs. Adding a new type only requires
 //! registering it in [`MessageRegistry::standard`].
 //!
@@ -102,7 +102,7 @@ pub(crate) fn auto_manage_topics(
                 Ok(publisher) => {
                     let seed = registry
                         .default_value(&info.type_name)
-                        .unwrap_or(serde_json::Value::Null);
+                        .unwrap_or(ron::Value::Unit);
                     commands
                         .entity(entity)
                         .insert((Publisher(publisher), TopicEdit(seed)));
@@ -199,8 +199,16 @@ pub fn setup_typed_publisher<T: MessageType>(
 mod tests {
     use super::*;
     use crate::messages::{DynPublisher, DynSubscription};
-    use serde_json::{Value, json};
+    use ron::Value;
+    use serde_json::json;
     use std::sync::Mutex as StdMutex;
+
+    /// Build a lossless [`ron::Value`] from a `serde_json!` literal, for test
+    /// ergonomics. The seam carries `ron::Value`; literals are easiest to
+    /// write with `json!`.
+    fn rv(j: serde_json::Value) -> Value {
+        ron::from_str(&ron::to_string(&j).unwrap()).unwrap()
+    }
 
     /// Fake subscription returning a queued list of values, newest last.
     struct FakeSubscription(StdMutex<Vec<Value>>);
@@ -234,9 +242,9 @@ mod tests {
         let mut app = App::new();
         app.add_systems(Update, poll_subscription_values);
 
-        let subscription = Subscription(Box::new(FakeSubscription(StdMutex::new(vec![
+        let subscription = Subscription(Box::new(FakeSubscription(StdMutex::new(vec![rv(
             json!({"data": "hello"}),
-        ]))));
+        )]))));
         let entity = app
             .world_mut()
             .spawn((subscription, TopicValue::default()))
@@ -245,14 +253,14 @@ mod tests {
         app.update();
         assert_eq!(
             app.world().get::<TopicValue>(entity),
-            Some(&TopicValue(Some(json!({"data": "hello"}))))
+            Some(&TopicValue(Some(rv(json!({"data": "hello"})))))
         );
 
         // No new message: the latest value must be kept, not cleared.
         app.update();
         assert_eq!(
             app.world().get::<TopicValue>(entity),
-            Some(&TopicValue(Some(json!({"data": "hello"}))))
+            Some(&TopicValue(Some(rv(json!({"data": "hello"})))))
         );
     }
 
@@ -266,7 +274,7 @@ mod tests {
             .world_mut()
             .spawn((
                 test_topic_info(),
-                TopicEdit(json!({"data": "to publish"})),
+                TopicEdit(rv(json!({"data": "to publish"}))),
                 Publisher(Box::new(FakePublisher(published.clone()))),
                 PublishRequest,
             ))
@@ -275,7 +283,7 @@ mod tests {
         app.update();
         assert_eq!(
             published.lock().unwrap().as_slice(),
-            &[json!({"data": "to publish"})]
+            &[rv(json!({"data": "to publish"}))]
         );
         assert!(
             app.world().get::<PublishRequest>(entity).is_none(),
@@ -295,7 +303,7 @@ mod tests {
         let published = Arc::new(StdMutex::new(Vec::new()));
         app.world_mut().spawn((
             test_topic_info(),
-            TopicEdit(json!({"data": "idle"})),
+            TopicEdit(rv(json!({"data": "idle"}))),
             Publisher(Box::new(FakePublisher(published.clone()))),
         ));
 

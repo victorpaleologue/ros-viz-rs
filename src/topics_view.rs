@@ -17,7 +17,8 @@ use std::collections::BTreeMap;
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
-use serde_json::Value;
+use ron::Value;
+use ron::value::Number;
 
 use crate::messages::MessageRegistry;
 use crate::topics::TopicInfo;
@@ -388,14 +389,41 @@ fn render_leaf_io(
 // Generic reflected-value rendering (read-only)
 // ---------------------------------------------------------------------------
 
+/// The string name of a RON map key (struct fields are string keys).
+fn field_name(key: &Value) -> String {
+    match key {
+        Value::String(s) => s.clone(),
+        other => scalar_text(other),
+    }
+}
+
+/// Exact display text for a RON [`Number`], preserving integer width and
+/// non-finite floats (the reason for RON over JSON).
+fn number_text(n: &Number) -> String {
+    match n {
+        Number::I8(v) => v.to_string(),
+        Number::I16(v) => v.to_string(),
+        Number::I32(v) => v.to_string(),
+        Number::I64(v) => v.to_string(),
+        Number::U8(v) => v.to_string(),
+        Number::U16(v) => v.to_string(),
+        Number::U32(v) => v.to_string(),
+        Number::U64(v) => v.to_string(),
+        Number::F32(v) => v.get().to_string(),
+        Number::F64(v) => v.get().to_string(),
+        _ => n.into_f64().to_string(),
+    }
+}
+
 /// Render a reflected message value as a compact read-only tree.
 ///
-/// Top-level objects render their fields directly (no wrapping header).
+/// Top-level maps render their fields directly (no wrapping header).
 fn render_value_read(ui: &mut egui::Ui, id: egui::Id, value: &Value) {
     match value {
-        Value::Object(map) => {
-            for (key, child) in map {
-                render_field_read(ui, id.with(key.as_str()), key, child);
+        Value::Map(map) => {
+            for (key, child) in map.iter() {
+                let name = field_name(key);
+                render_field_read(ui, id.with(name.as_str()), &name, child);
             }
         }
         other => {
@@ -407,15 +435,16 @@ fn render_value_read(ui: &mut egui::Ui, id: egui::Id, value: &Value) {
 /// Render one named field of a reflected value (read-only).
 fn render_field_read(ui: &mut egui::Ui, id: egui::Id, label: &str, value: &Value) {
     match value {
-        Value::Object(map) => {
+        Value::Map(map) => {
             ui.label(egui::RichText::new(format!("{label}:")).color(FIELD_COLOR));
             ui.indent(id, |ui| {
-                for (key, child) in map {
-                    render_field_read(ui, id.with(key.as_str()), key, child);
+                for (key, child) in map.iter() {
+                    let name = field_name(key);
+                    render_field_read(ui, id.with(name.as_str()), &name, child);
                 }
             });
         }
-        Value::Array(items) => {
+        Value::Seq(items) => {
             egui::CollapsingHeader::new(
                 egui::RichText::new(format!("{label} [{}]", items.len())).color(FIELD_COLOR),
             )
@@ -439,12 +468,16 @@ fn render_field_read(ui: &mut egui::Ui, id: egui::Id, label: &str, value: &Value
 /// Compact display text for a scalar [`Value`].
 fn scalar_text(value: &Value) -> String {
     match value {
-        Value::Null => "null".to_owned(),
+        Value::Unit => "null".to_owned(),
+        Value::Option(None) => "none".to_owned(),
+        Value::Option(Some(v)) => scalar_text(v),
         Value::Bool(b) => b.to_string(),
-        Value::Number(n) => n.to_string(),
+        Value::Char(c) => c.to_string(),
+        Value::Number(n) => number_text(n),
         Value::String(s) => s.clone(),
-        // Objects/arrays are handled by the callers.
-        other => other.to_string(),
+        Value::Bytes(b) => format!("{} bytes", b.len()),
+        // Maps/seqs are handled by the callers.
+        Value::Map(_) | Value::Seq(_) => String::new(),
     }
 }
 
@@ -458,11 +491,11 @@ fn scalar_text(value: &Value) -> String {
 /// publish request.
 fn render_value_edit(ui: &mut egui::Ui, id: egui::Id, value: &mut Value) -> bool {
     match value {
-        Value::Object(map) => {
+        Value::Map(map) => {
             let mut submit = false;
             for (key, child) in map.iter_mut() {
-                let key_id = id.with(key.as_str());
-                submit |= render_field_edit(ui, key_id, key, child);
+                let name = field_name(key);
+                submit |= render_field_edit(ui, id.with(name.as_str()), &name, child);
             }
             submit
         }
@@ -473,18 +506,18 @@ fn render_value_edit(ui: &mut egui::Ui, id: egui::Id, value: &mut Value) -> bool
 /// Render one named field of a reflected value (editable).
 fn render_field_edit(ui: &mut egui::Ui, id: egui::Id, label: &str, value: &mut Value) -> bool {
     match value {
-        Value::Object(map) => {
+        Value::Map(map) => {
             ui.label(egui::RichText::new(format!("{label}:")).color(FIELD_COLOR));
             let mut submit = false;
             ui.indent(id, |ui| {
                 for (key, child) in map.iter_mut() {
-                    let key_id = id.with(key.as_str());
-                    submit |= render_field_edit(ui, key_id, key, child);
+                    let name = field_name(key);
+                    submit |= render_field_edit(ui, id.with(name.as_str()), &name, child);
                 }
             });
             submit
         }
-        Value::Array(items) => {
+        Value::Seq(items) => {
             let mut submit = false;
             egui::CollapsingHeader::new(
                 egui::RichText::new(format!("{label} [{}]", items.len())).color(FIELD_COLOR),
@@ -502,8 +535,8 @@ fn render_field_edit(ui: &mut egui::Ui, id: egui::Id, label: &str, value: &mut V
                         .clicked()
                     {
                         // Clone the last element when possible so the new
-                        // entry matches the element type; Null otherwise.
-                        let new_item = items.last().cloned().unwrap_or(Value::Null);
+                        // entry matches the element type; Unit otherwise.
+                        let new_item = items.last().cloned().unwrap_or(Value::Unit);
                         items.push(new_item);
                     }
                     if ui
@@ -538,23 +571,18 @@ fn render_scalar_edit(ui: &mut egui::Ui, id: egui::Id, value: &mut Value) -> boo
             false
         }
         Value::Number(n) => {
-            // Preserve the JSON number flavour: floats stay floats and
-            // integers stay integers, so reflection back to the typed
-            // message keeps working.
-            if n.is_f64() {
-                let mut x = n.as_f64().unwrap_or(0.0);
+            // Keep ints as ints and floats as floats so reflection back to
+            // the typed message holds (serde coerces I64/F64 to the field's
+            // exact width). Canonicalize to I64/F64 on edit.
+            if matches!(n, Number::F32(_) | Number::F64(_)) {
+                let mut x = n.into_f64();
                 if ui.add(egui::DragValue::new(&mut x).speed(0.05)).changed() {
-                    *value = Value::from(x);
+                    *value = Value::Number(Number::new(x));
                 }
-            } else if let Some(i) = n.as_i64() {
-                let mut x = i;
+            } else {
+                let mut x = n.into_f64() as i64;
                 if ui.add(egui::DragValue::new(&mut x)).changed() {
-                    *value = Value::from(x);
-                }
-            } else if let Some(u) = n.as_u64() {
-                let mut x = u;
-                if ui.add(egui::DragValue::new(&mut x)).changed() {
-                    *value = Value::from(x);
+                    *value = Value::Number(Number::new(x));
                 }
             }
             false
@@ -567,11 +595,11 @@ fn render_scalar_edit(ui: &mut egui::Ui, id: egui::Id, value: &mut Value) -> boo
             );
             response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))
         }
-        Value::Null => {
+        Value::Unit | Value::Option(None) => {
             ui.label(egui::RichText::new("null").color(INFO_COLOR).italics());
             false
         }
-        // Objects/arrays are handled by the callers.
+        // Maps/seqs are handled by the callers; other variants are read-only.
         _ => false,
     }
 }
@@ -587,6 +615,12 @@ mod tests {
     use crate::topics::TopicKind;
     use bevy_egui::EguiFullOutput;
     use serde_json::json;
+
+    /// Build a lossless [`ron::Value`] from a `serde_json!` literal; the topic
+    /// value tree carries `ron::Value`, but literals read best with `json!`.
+    fn rv(j: serde_json::Value) -> Value {
+        ron::from_str(&ron::to_string(&j).unwrap()).unwrap()
+    }
 
     // -----------------------------------------------------------------------
     // Unit tests for traits
@@ -880,10 +914,10 @@ mod tests {
     #[test]
     fn subscribed_twist_renders_fields() {
         let mut app = ui_test_app();
-        let twist = json!({
+        let twist = rv(json!({
             "linear": {"x": 1.5, "y": 0.0, "z": 0.0},
             "angular": {"x": 0.0, "y": 0.0, "z": -0.75},
-        });
+        }));
         app.world_mut().spawn((
             // No leading slash: the leaf renders at the root level instead of
             // under the collapsed "/" header (collapsing headers default closed).

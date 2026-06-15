@@ -20,15 +20,26 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use bevy::prelude::Resource;
+use ron::Value;
 #[cfg(feature = "ros2")]
 use ros2_client::Node;
 #[cfg(feature = "ros2")]
 use rustdds::QosPolicies;
-use serde_json::Value;
 
 use crate::ros_msgs::{self, MessageType};
 #[cfg(feature = "ros2")]
 use crate::topics_io::{setup_typed_publisher, setup_typed_subscription};
+
+/// Reflect a typed message into a lossless [RON value](ron::Value) tree.
+///
+/// Unlike JSON, RON keeps the distinction between `i64`/`u64`/`f64` and can
+/// represent non-finite floats (`NaN`/`inf`), which ROS messages carry
+/// (covariances, laser ranges). We go through RON's text form because
+/// `ron::Value` has no direct `to_value`; the round-trip is lossless.
+pub(crate) fn to_value<T: serde::Serialize>(msg: &T) -> Result<Value, String> {
+    let text = ron::to_string(msg).map_err(|e| e.to_string())?;
+    ron::from_str::<Value>(&text).map_err(|e| e.to_string())
+}
 
 // ---------------------------------------------------------------------------
 // Type-erased subscription / publisher
@@ -60,7 +71,7 @@ impl<T: MessageType> DynSubscription for TypedSubscription<T> {
             latest = Some(msg);
         }
         let msg = latest?;
-        match serde_json::to_value(&msg) {
+        match to_value(&msg) {
             Ok(value) => Some(value),
             Err(e) => {
                 tracing::error!("Failed to reflect {}: {e}", T::MESSAGE_TYPE_STR);
@@ -78,7 +89,7 @@ struct TypedPublisher<T: MessageType>(ros2_client::Publisher<T>);
 #[cfg(feature = "ros2")]
 impl<T: MessageType> DynPublisher for TypedPublisher<T> {
     fn publish(&self, value: &Value) -> Result<(), String> {
-        let msg: T = serde_json::from_value(value.clone()).map_err(|e| {
+        let msg: T = value.clone().into_rust().map_err(|e| {
             format!(
                 "value does not match message type {}: {e}",
                 T::MESSAGE_TYPE_STR
@@ -137,7 +148,7 @@ fn make_publisher_erased<T: MessageType>(
 
 /// Monomorphized [`MessageVtable::default_value`] entry.
 fn default_value_erased<T: MessageType + Default>() -> Value {
-    serde_json::to_value(T::default()).unwrap_or(Value::Null)
+    to_value(&T::default()).unwrap_or(Value::Unit)
 }
 
 /// Register every standard message type on `$registry`.
@@ -288,7 +299,7 @@ impl MessageRegistry {
         (vtable.make_publisher)(node, topic, qos)
     }
 
-    /// Default value of `type_name` reflected as a [`serde_json::Value`];
+    /// Default value of `type_name` reflected as a [`ron::Value`];
     /// `None` if the type is not registered.
     pub fn default_value(&self, type_name: &str) -> Option<Value> {
         self.entries
@@ -313,6 +324,13 @@ mod tests {
     use super::*;
     use serde_json::json;
     use std::time::{Duration, Instant};
+
+    /// Build a lossless [`ron::Value`] from a `serde_json!` literal, for test
+    /// ergonomics — the seam carries `ron::Value`, but literals read best
+    /// written with `json!`.
+    fn rv(j: serde_json::Value) -> Value {
+        ron::from_str(&ron::to_string(&j).unwrap()).unwrap()
+    }
 
     #[cfg(feature = "ros2")]
     /// Pick a random DDS domain ID in 1..=232 to isolate tests from each
@@ -400,19 +418,18 @@ mod tests {
         let registry = MessageRegistry::standard();
 
         let joint_state = registry.default_value("sensor_msgs/JointState").unwrap();
-        let typed: ros_msgs::JointState = serde_json::from_value(joint_state).expect("JointState");
+        let typed: ros_msgs::JointState = joint_state.into_rust().expect("JointState");
         assert_eq!(typed, ros_msgs::JointState::default());
 
         let odometry = registry.default_value("nav_msgs/Odometry").unwrap();
-        assert_eq!(
-            odometry["pose"]["covariance"].as_array().map(|a| a.len()),
-            Some(36)
-        );
-        let typed: ros_msgs::Odometry = serde_json::from_value(odometry).expect("Odometry");
+        let typed: ros_msgs::Odometry = odometry.into_rust().expect("Odometry");
+        // covariance is a float64[36]; into_rust only succeeds when the
+        // reflected tree carries all 36 elements.
+        assert_eq!(typed.pose.covariance.len(), 36);
         assert_eq!(typed, ros_msgs::Odometry::default());
 
         let tf = registry.default_value("tf2_msgs/TFMessage").unwrap();
-        let typed: ros_msgs::TFMessage = serde_json::from_value(tf).expect("TFMessage");
+        let typed: ros_msgs::TFMessage = tf.into_rust().expect("TFMessage");
         assert_eq!(typed, ros_msgs::TFMessage::default());
 
         assert_eq!(registry.default_value("made_up_msgs/Nope"), None);
@@ -422,7 +439,7 @@ mod tests {
     fn default_value_quaternion_is_identity() {
         let registry = MessageRegistry::standard();
         let q = registry.default_value("geometry_msgs/Quaternion").unwrap();
-        assert_eq!(q, json!({"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0}));
+        assert_eq!(q, rv(json!({"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0})));
     }
 
     #[test]
@@ -438,6 +455,32 @@ mod tests {
         assert_eq!(value["name"], json!(["a", "b"]));
         let back: ros_msgs::JointState = serde_json::from_value(value).unwrap();
         assert_eq!(back, msg);
+    }
+
+    /// The reason the value tree is RON rather than JSON: non-finite floats
+    /// and full-width integers survive reflection losslessly. The same values
+    /// through `serde_json` would be clobbered (`NaN`/`±inf` → `null`,
+    /// `u64`/`i64` past 2^53 → lossy `f64`).
+    #[test]
+    fn reflection_preserves_non_finite_floats_and_wide_ints() {
+        // Non-finite f64 round-trips through the reflected value.
+        for probe in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
+            let value = to_value(&ros_msgs::Float64 { data: probe }).unwrap();
+            assert_ne!(value, Value::Unit, "non-finite float must reflect");
+            let back: ros_msgs::Float64 = value.into_rust().expect("Float64 round-trip");
+            if probe.is_nan() {
+                assert!(back.data.is_nan(), "NaN must survive reflection");
+            } else {
+                assert_eq!(back.data, probe);
+            }
+        }
+
+        // A u64 beyond f64's 2^53 exact-integer range survives unrounded —
+        // serde_json would coerce it to a lossy f64.
+        let wide = (1u64 << 53) + 1;
+        let value = to_value(&ros_msgs::UInt64 { data: wide }).unwrap();
+        let back: ros_msgs::UInt64 = value.into_rust().expect("UInt64 round-trip");
+        assert_eq!(back.data, wide);
     }
 
     #[cfg(feature = "ros2")]
@@ -466,7 +509,7 @@ mod tests {
             .make_publisher("geometry_msgs/Twist", &node, "/mismatch_twist", None)
             .expect("make_publisher");
         let err = publisher
-            .publish(&json!({"data": "not a twist"}))
+            .publish(&rv(json!({"data": "not a twist"})))
             .expect_err("must fail");
         assert!(err.contains("geometry_msgs/Twist"), "got: {err}");
     }
@@ -505,7 +548,7 @@ mod tests {
     #[test]
     fn dds_round_trip_string() {
         crate::require_dds_multicast!();
-        let sent = json!({"data": "hello reflection"});
+        let sent = rv(json!({"data": "hello reflection"}));
         let received = pub_sub_round_trip("std_msgs/String", "/registry_test_string", sent.clone());
         assert_eq!(received, sent);
     }
@@ -514,10 +557,10 @@ mod tests {
     #[test]
     fn dds_round_trip_twist() {
         crate::require_dds_multicast!();
-        let sent = json!({
+        let sent = rv(json!({
             "linear": {"x": 1.5, "y": 0.0, "z": -0.5},
             "angular": {"x": 0.0, "y": 0.0, "z": 3.25},
-        });
+        }));
         let received =
             pub_sub_round_trip("geometry_msgs/Twist", "/registry_test_twist", sent.clone());
         assert_eq!(received, sent);
@@ -527,13 +570,13 @@ mod tests {
     #[test]
     fn dds_round_trip_joint_state() {
         crate::require_dds_multicast!();
-        let sent = json!({
+        let sent = rv(json!({
             "header": {"stamp": {"sec": 12, "nanosec": 34}, "frame_id": "base"},
             "name": ["shoulder", "elbow"],
             "position": [0.5, -1.25],
             "velocity": [],
             "effort": [],
-        });
+        }));
         let received = pub_sub_round_trip(
             "sensor_msgs/JointState",
             "/registry_test_joint_state",
