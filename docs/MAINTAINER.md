@@ -25,30 +25,21 @@ there's a one-time bootstrap to claim the `ros-viz` name:
 
 1. Sign in to <https://crates.io> with GitHub and verify your email
    (Account Settings).
-2. **One-time first publish** from your machine to claim the name. Either:
-   - create a short-lived API token (Account Settings → **API Tokens** →
-     *New Token*, scope `publish-update`), then
-     `CARGO_REGISTRY_TOKEN=<token> cargo publish` (or `cargo login` then
-     `cargo publish`) from a clean checkout of the tag — **then delete that
-     token**; or
-   - skip the token entirely by letting CI fail once, since CI can't publish
-     a crate that doesn't exist yet — the manual publish above is the simpler
-     path.
+2. **One-time first publish** to claim the name: create a short-lived API
+   token (Account Settings → **API Tokens** → *New Token*, scope
+   `publish-update`), run `cargo login` then `cargo publish` from a clean
+   checkout of the tag, and **delete the token** afterwards. This is the only
+   time a token is needed — CI can't publish a crate that doesn't exist yet.
 3. On the new crate's page: **Settings → Trusted Publishing → Add** with
    - Repository owner: `victorpaleologue`
    - Repository name: `ros-viz-rs`
    - Workflow filename: `release.yml`
    - Environment: *(leave blank)*
 
-From then on every tagged release publishes automatically over OIDC, and you
-can remove any `CARGO_REGISTRY_TOKEN` secret. Until step 3 is done the
-`crates-io` job is a harmless no-op (`continue-on-error`); the GitHub release
-and platform binaries publish regardless.
-
-> If you'd rather not use Trusted Publishing, the classic path still works:
-> add a `CARGO_REGISTRY_TOKEN` repo secret (Settings → Secrets and variables →
-> Actions) and swap the auth step back to
-> `cargo publish --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"`.
+From then on every tagged release publishes automatically over OIDC, with no
+stored secret. Until step 3 is done the `crates-io` job is a harmless no-op
+(`continue-on-error`); the GitHub release and platform binaries publish
+regardless.
 
 ## npm publishing
 
