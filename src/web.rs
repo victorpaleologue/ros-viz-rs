@@ -26,6 +26,13 @@ pub fn start(rosbridge_url: Option<String>) {
     let _ = crate::app::run(options);
 }
 
+/// Choose the robot the demo shows, by its URDF. Call before [`start`]; the
+/// page fetches the URDF (and any meshes via [`add_mesh`]) and selects it.
+#[wasm_bindgen]
+pub fn set_demo_robot(urdf_xml: String) {
+    crate::demo::set_demo_urdf(urdf_xml);
+}
+
 /// Supply a mesh file from the page (e.g. a user upload), keyed by its file
 /// name or URI. The running app reloads the current robot so the mesh shows.
 /// Lets users provide license-bound meshes (NAO) without hosting them.

@@ -19,6 +19,18 @@ use crate::scene::{JointPositions, MeshBlobs, RobotHandle, spawn_robot};
 /// fall back to skeleton markers otherwise).
 pub const NAO_URDF: &str = include_str!("../assets/nao_robot.urdf");
 
+/// An optional URDF for the demo to show instead of the bundled NAO, set by
+/// the page (`crate::web::set_demo_robot`) so the browser can switch robots.
+/// A plain static for the same reason as the upload queue: the wasm runtime
+/// has no `App` handle. Empty in native tests, so the default stays NAO.
+static DEMO_URDF: Mutex<Option<String>> = Mutex::new(None);
+
+/// Choose the robot the demo displays (its URDF). Takes effect on the next
+/// spawn; reload the page (or clear the robot) to switch.
+pub fn set_demo_urdf(urdf_xml: String) {
+    *DEMO_URDF.lock().unwrap_or_else(|p| p.into_inner()) = Some(urdf_xml);
+}
+
 /// Joint positions as a function of elapsed time (seconds).
 pub type JointScript = Box<dyn FnMut(f64) -> Vec<(String, f64)> + Send>;
 
@@ -97,8 +109,24 @@ fn spawn_demo_robot(
     if !existing.is_empty() {
         return;
     }
-    let model = RobotModel::from_urdf_str(NAO_URDF)
-        .expect("the bundled NAO URDF parses (checked by tests)");
+    // The page-selected robot, or the bundled NAO.
+    let custom = DEMO_URDF.lock().unwrap_or_else(|p| p.into_inner()).clone();
+    let urdf = custom.as_deref().unwrap_or(NAO_URDF);
+    let Ok(model) = RobotModel::from_urdf_str(urdf).inspect_err(|e| {
+        tracing::error!("demo URDF failed to parse: {e}");
+    }) else {
+        return;
+    };
+
+    // Fit the animation to the robot: NAO waves; any other robot gets a
+    // gentle sweep of its own joints so it looks alive without naming them.
+    let script = if custom.is_some() {
+        scripts::sine_sweep(model.joint_names(), 0.5)
+    } else {
+        scripts::nao_wave()
+    };
+    commands.insert_resource(DemoScript(Mutex::new(script)));
+
     spawn_robot(
         &mut commands,
         &mut meshes,

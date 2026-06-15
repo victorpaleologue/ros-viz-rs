@@ -97,6 +97,15 @@
       font: inherit;
     }
     .controls button:disabled { opacity: 0.5; cursor: default; }
+    .controls select {
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid #2a2e36;
+      border-radius: 8px;
+      padding: 0.55rem 0.8rem;
+      font: inherit;
+      cursor: pointer;
+    }
     .controls .upload {
       background: transparent;
       color: var(--text);
@@ -142,10 +151,14 @@
         </div>
       </div>
       <div class="controls">
+        <select id="robot" title="Demo robot" disabled>
+          <option value="ur5e">UR5e (with meshes)</option>
+          <option value="nao">NAO (skeleton — add meshes)</option>
+        </select>
         <input id="rosbridge-url" type="text"
                placeholder="ws://localhost:9090 — rosbridge URL of your robot (optional)" />
         <button id="connect" disabled>Connect</button>
-        <button id="demo" disabled>NAO demo</button>
+        <button id="demo" disabled>Demo</button>
         <label id="upload-label" class="upload" title="Provide mesh files (.dae/.stl/.obj) for the current robot — e.g. your local NAO meshes. Nothing is uploaded to a server.">
           Add meshes…
           <input id="mesh-upload" type="file" multiple
@@ -157,11 +170,14 @@
     <section>
       <h2>What is this?</h2>
       <p>
-        The robot above is a simulated <strong>NAO</strong> waving hello: its URDF
-        description is parsed, forward kinematics are computed with the
+        The robot above is a <strong>UR5e</strong> arm (switch to a
+        <strong>NAO</strong> with the selector): its URDF description is
+        parsed, the meshes loaded, forward kinematics computed with the
         <a href="https://crates.io/crates/k">k</a> crate, and
         <a href="https://bevy.org">Bevy</a> renders it — all compiled to
-        WebAssembly from the same Rust code that runs natively.
+        WebAssembly from the same Rust code that runs natively. NAO's meshes
+        aren't bundled (they're licensed); drop your own in with
+        <em>Add meshes…</em> and it appears.
       </p>
       <p>
         Because <strong>ros-viz-rs</strong> talks DDS directly (no rclcpp, no ROS
@@ -239,17 +255,46 @@
       wasm.start(url ?? undefined);
     }
 
+    // Demo robots hosted alongside the page. UR5e ships BSD-licensed meshes;
+    // NAO has none here (CC BY-NC-ND) — use "Add meshes…" to supply your own.
+    const ROBOTS = {
+      ur5e: {
+        urdf: "robots/ur5e/ur5e.urdf",
+        meshes: ["base", "forearm", "shoulder", "upperarm", "wrist1", "wrist2", "wrist3"]
+          .map((n) => `robots/ur5e/meshes/${n}.dae`),
+      },
+      nao: { urdf: "robots/nao/nao.urdf", meshes: [] },
+    };
+
+    const robotSelect = document.getElementById("robot");
+    const meshUpload = document.getElementById("mesh-upload");
+
+    // Fetch the chosen robot's URDF (and hosted meshes) and hand them to the
+    // app before it spawns. Same-origin, so no allowlist needed.
+    async function loadRobot(name) {
+      const r = ROBOTS[name] ?? ROBOTS.ur5e;
+      const urdf = await (await fetch(r.urdf)).text();
+      wasm.set_demo_robot(urdf);
+      for (const url of r.meshes) {
+        const bytes = new Uint8Array(await (await fetch(url)).arrayBuffer());
+        wasm.add_mesh(url.split("/").pop(), bytes);
+      }
+    }
+
     await wasm.default();
     connectButton.disabled = false;
     demoButton.disabled = false;
+    robotSelect.disabled = false;
+    meshUpload.disabled = false;
+
     connectButton.onclick = () => launch(urlInput.value.trim() || null);
     demoButton.onclick = () => launch(null);
-
-    // Mesh upload: read each picked file in the browser and hand its bytes to
-    // the running app, which reloads the robot with the new meshes. Nothing
-    // leaves the page. Only meaningful once the app is running (post-launch).
-    const meshUpload = document.getElementById("mesh-upload");
-    meshUpload.disabled = false;
+    // Switching robot is a reload with the choice in the query string.
+    robotSelect.onchange = () => {
+      window.location.search = `?robot=${robotSelect.value}`;
+    };
+    // Mesh upload: read each picked file in-browser and hand its bytes to the
+    // app, which reloads the robot with them. Nothing leaves the page.
     meshUpload.onchange = async () => {
       for (const file of meshUpload.files) {
         const bytes = new Uint8Array(await file.arrayBuffer());
@@ -258,12 +303,17 @@
       meshUpload.value = "";
     };
 
-    // Auto-start: rosbridge URL from the fragment, demo otherwise.
+    // Auto-start: a rosbridge URL from the fragment, else the demo with the
+    // selected robot (UR5e by default).
     const fragment = decodeURIComponent(window.location.hash.slice(1));
     if (fragment.startsWith("ws://") || fragment.startsWith("wss://")) {
       urlInput.value = fragment;
       launch(fragment);
     } else {
+      const params = new URLSearchParams(window.location.search);
+      const robot = ROBOTS[params.get("robot")] ? params.get("robot") : "ur5e";
+      robotSelect.value = robot;
+      await loadRobot(robot);
       launch(null);
     }
   </script>
