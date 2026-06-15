@@ -1,0 +1,8 @@
+{
+  // Zenoh router for rmw_zenoh: listen on all interfaces so the host
+  // visualizer (outside the container) can connect on the published port.
+  mode: "router",
+  listen: {
+    endpoints: ["tcp/0.0.0.0:7447"],
+  },
+}

@@ -35,6 +35,9 @@ default = ["ros2", "rosbridge"]
 ros2 = ["dep:ros2-client", "dep:rustdds", "dep:futures", "dep:async-channel"]
 # rosbridge JSON/WebSocket transport; works natively and on wasm.
 rosbridge = ["dep:ewebsock"]
+# Native Zenoh transport for rmw_zenoh ROS 2 systems. Heavy deps (async
+# runtime), off by default; native only.
+zenoh = ["dep:zenoh", "dep:zenoh-ext", "dep:cdr", "dep:tokio"]
 # Use the WebGPU wasm backend instead of WebGL2. WebGPU is required for the
 # egui topics panel to render in the browser (WebGL2 lacks
 # TEXTURE_BINDING_ARRAY). The web build ships both: a universal WebGL2
@@ -69,6 +72,15 @@ image = { version = "0.24", default-features = false, features = ["png"] }
 async-channel = { version = "2.3", optional = true }
 futures = { version = "0.3", optional = true }
 ewebsock = { version = "0.8", optional = true }
+# Native Zenoh transport (rmw_zenoh). zenoh 1.x is async (tokio); cdr decodes
+# the CDR payloads into our ros_msgs structs.
+# `unstable` exposes the AdvancedSubscriber API used for transient-local.
+zenoh = { version = "1", features = ["unstable"], optional = true }
+# AdvancedSubscriber: fetches transient-local history (rmw_zenoh latches
+# /robot_description via zenoh-ext AdvancedPublisher caching).
+zenoh-ext = { version = "1", features = ["unstable"], optional = true }
+cdr = { version = "0.2", optional = true }
+tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"

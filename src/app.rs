@@ -174,6 +174,15 @@ pub fn build_app(options: &Options) -> App {
         return app;
     }
 
+    #[cfg(feature = "zenoh")]
+    if let Some(endpoint) = options.zenoh.clone() {
+        app.add_plugins(crate::zenoh::ZenohPlugin {
+            endpoints: vec![endpoint],
+        });
+        app.add_systems(Update, spawn_pending_robot);
+        return app;
+    }
+
     #[cfg(feature = "ros2")]
     match RosPlugin::new(options.domain, "ros_viz_rs") {
         Ok(ros) => {

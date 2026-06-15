@@ -29,6 +29,11 @@ pub struct Options {
     #[arg(long, value_name = "URL")]
     pub rosbridge: Option<std::string::String>,
 
+    /// Connect to an rmw_zenoh ROS 2 system through a Zenoh router endpoint,
+    /// e.g. `tcp/localhost:7447`. Requires the `zenoh` feature.
+    #[arg(long, value_name = "ENDPOINT")]
+    pub zenoh: Option<std::string::String>,
+
     /// Run without creating a native window and save the rendered frame to the given path.
     #[arg(long, value_name = "PATH")]
     pub snapshot_to: Option<PathBuf>,
