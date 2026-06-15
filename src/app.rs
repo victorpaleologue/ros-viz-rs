@@ -359,6 +359,7 @@ fn spawn_pending_robot(
     mut pending: ResMut<PendingRobot>,
     robots: Query<&RobotHandle>,
     options: Res<Options>,
+    blobs: Res<crate::scene::MeshBlobs>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
@@ -369,6 +370,7 @@ fn spawn_pending_robot(
         return;
     }
     let mut resolver = MeshResolver::default();
+    #[cfg(not(target_arch = "wasm32"))]
     resolver.fallback_dirs.extend(std::env::current_dir().ok());
     for spec in &options.package {
         if let Some((name, path)) = spec.split_once('=') {
@@ -377,6 +379,8 @@ fn spawn_pending_robot(
             tracing::warn!("--package expects NAME=PATH, got '{spec}'");
         }
     }
+    // Merge any uploaded meshes (web) on top.
+    let resolver = blobs.apply(resolver);
     tracing::info!("Spawning robot '{}'", model.name());
     spawn_robot(&mut commands, &mut meshes, &mut materials, model, &resolver);
 }

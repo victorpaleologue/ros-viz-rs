@@ -26,6 +26,14 @@ pub fn start(rosbridge_url: Option<String>) {
     let _ = crate::app::run(options);
 }
 
+/// Supply a mesh file from the page (e.g. a user upload), keyed by its file
+/// name or URI. The running app reloads the current robot so the mesh shows.
+/// Lets users provide license-bound meshes (NAO) without hosting them.
+#[wasm_bindgen]
+pub fn add_mesh(name: String, bytes: Vec<u8>) {
+    crate::scene::queue_mesh_blob(name, bytes);
+}
+
 /// Route panics to the browser console with a readable backtrace.
 fn console_error_panic_hook() {
     static SET: std::sync::Once = std::sync::Once::new();

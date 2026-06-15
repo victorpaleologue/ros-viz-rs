@@ -97,6 +97,17 @@
       font: inherit;
     }
     .controls button:disabled { opacity: 0.5; cursor: default; }
+    .controls .upload {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      padding: 0.55rem 1.1rem;
+      cursor: pointer;
+      font: inherit;
+      white-space: nowrap;
+    }
+    .controls .upload:has(input:disabled) { opacity: 0.5; cursor: default; }
     section { margin: 2.5rem 0; }
     h2 { font-size: 1.3rem; }
     p, li { color: var(--muted); }
@@ -135,6 +146,11 @@
                placeholder="ws://localhost:9090 — rosbridge URL of your robot (optional)" />
         <button id="connect" disabled>Connect</button>
         <button id="demo" disabled>NAO demo</button>
+        <label id="upload-label" class="upload" title="Provide mesh files (.dae/.stl/.obj) for the current robot — e.g. your local NAO meshes. Nothing is uploaded to a server.">
+          Add meshes…
+          <input id="mesh-upload" type="file" multiple
+                 accept=".dae,.stl,.obj" hidden disabled />
+        </label>
       </div>
     </div>
 
@@ -228,6 +244,19 @@
     demoButton.disabled = false;
     connectButton.onclick = () => launch(urlInput.value.trim() || null);
     demoButton.onclick = () => launch(null);
+
+    // Mesh upload: read each picked file in the browser and hand its bytes to
+    // the running app, which reloads the robot with the new meshes. Nothing
+    // leaves the page. Only meaningful once the app is running (post-launch).
+    const meshUpload = document.getElementById("mesh-upload");
+    meshUpload.disabled = false;
+    meshUpload.onchange = async () => {
+      for (const file of meshUpload.files) {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        wasm.add_mesh(file.name, bytes);
+      }
+      meshUpload.value = "";
+    };
 
     // Auto-start: rosbridge URL from the fragment, demo otherwise.
     const fragment = decodeURIComponent(window.location.hash.slice(1));

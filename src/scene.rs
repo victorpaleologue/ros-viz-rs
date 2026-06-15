@@ -13,7 +13,7 @@
 
 use std::collections::HashMap;
 use std::f32::consts::FRAC_PI_2;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
@@ -55,6 +55,61 @@ pub struct LinkEntity {
 #[derive(Component, Debug, Default)]
 pub struct AutoFrameCamera;
 
+/// Mesh files supplied at runtime (e.g. uploaded in the browser), merged
+/// into every robot's [`MeshResolver`] when it spawns. Lets users provide
+/// license-bound meshes (NAO) without hosting them.
+#[derive(Resource, Default)]
+pub struct MeshBlobs(pub HashMap<String, Vec<u8>>);
+
+impl MeshBlobs {
+    /// Build a resolver seeded with these blobs on top of `base`.
+    pub fn apply(&self, mut base: MeshResolver) -> MeshResolver {
+        base.blobs
+            .extend(self.0.iter().map(|(k, v)| (k.clone(), v.clone())));
+        base
+    }
+}
+
+/// Queue of uploaded meshes awaiting insertion into [`MeshBlobs`]. A plain
+/// static so the wasm upload entry point (`crate::web::add_mesh`) can reach
+/// the running app without an `App` handle; drained by [`drain_uploaded_meshes`].
+static UPLOAD_QUEUE: Mutex<Vec<(String, Vec<u8>)>> = Mutex::new(Vec::new());
+
+/// Hand an uploaded mesh (name + bytes) to the running app. Picked up on the
+/// next frame, which reloads the current robot so the mesh appears.
+pub fn queue_mesh_blob(name: String, bytes: Vec<u8>) {
+    UPLOAD_QUEUE
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .push((name, bytes));
+}
+
+/// Drain newly uploaded meshes into [`MeshBlobs`] and, if any arrived,
+/// despawn the current robot so the spawn systems rebuild it with the new
+/// meshes (both the demo and connection spawn paths re-run when no robot
+/// is present).
+fn drain_uploaded_meshes(
+    mut commands: Commands,
+    mut blobs: ResMut<MeshBlobs>,
+    robots: Query<(Entity, &RobotHandle)>,
+    mut pending: ResMut<PendingRobot>,
+) {
+    let uploaded: Vec<(String, Vec<u8>)> =
+        std::mem::take(&mut *UPLOAD_QUEUE.lock().unwrap_or_else(|p| p.into_inner()));
+    if uploaded.is_empty() {
+        return;
+    }
+    for (name, bytes) in uploaded {
+        blobs.0.insert(name, bytes);
+    }
+    // Force a respawn so the new meshes appear. Re-queue the model for the
+    // connection spawn path; the demo path respawns on its own empty-guard.
+    for (entity, handle) in robots.iter() {
+        pending.0 = Some(handle.0.clone());
+        commands.entity(entity).despawn();
+    }
+}
+
 /// Spawns robots from their model and keeps them posed via FK.
 pub struct RobotScenePlugin;
 
@@ -62,7 +117,15 @@ impl Plugin for RobotScenePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<JointPositions>();
         app.init_resource::<PendingRobot>();
-        app.add_systems(Update, (sync_robot_poses, frame_camera_on_new_robot));
+        app.init_resource::<MeshBlobs>();
+        app.add_systems(
+            Update,
+            (
+                drain_uploaded_meshes,
+                sync_robot_poses,
+                frame_camera_on_new_robot,
+            ),
+        );
     }
 }
 
