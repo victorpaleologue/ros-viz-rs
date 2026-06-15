@@ -43,6 +43,10 @@ pub struct MeshResolver {
     /// this directory; resolutions escaping it (`..`, symlinks, absolute
     /// `file://`) are rejected. `None` (the default) trusts the URDF.
     pub sandbox_root: Option<PathBuf>,
+    /// In-memory mesh files, keyed by URI or by file name. Populated by the
+    /// web upload path (and tests), where there is no filesystem; checked
+    /// before disk. Blobs are user-supplied, hence trusted (no sandbox).
+    pub blobs: HashMap<String, Vec<u8>>,
 }
 
 impl MeshResolver {
@@ -61,6 +65,7 @@ impl MeshResolver {
             packages: HashMap::new(),
             fallback_dirs,
             sandbox_root: None,
+            blobs: HashMap::new(),
         }
     }
 
@@ -68,6 +73,46 @@ impl MeshResolver {
     pub fn with_package(mut self, name: impl Into<String>, dir: impl Into<PathBuf>) -> Self {
         self.packages.insert(name.into(), dir.into());
         self
+    }
+
+    /// Register an in-memory mesh file (e.g. from a browser upload), keyed by
+    /// its URI or file name. Matched before the filesystem by [`load`](Self::load).
+    pub fn add_blob(&mut self, name: impl Into<String>, bytes: Vec<u8>) {
+        self.blobs.insert(name.into(), bytes);
+    }
+
+    /// Builder form of [`add_blob`](Self::add_blob).
+    pub fn with_blob(mut self, name: impl Into<String>, bytes: Vec<u8>) -> Self {
+        self.add_blob(name, bytes);
+        self
+    }
+
+    /// Load the mesh a URDF visual references: an uploaded [blob](Self::blobs)
+    /// if one matches (by exact URI or file name), else the file on disk.
+    ///
+    /// This is the single entry point the scene uses, so the same code path
+    /// serves native (filesystem) and web (uploaded bytes).
+    pub fn load(&self, uri: &str) -> anyhow::Result<LoadedMesh> {
+        if let Some(bytes) = self.blob_for(uri) {
+            // `uri` carries the extension, so it works as the parser hint.
+            return load_mesh_from_slice(bytes, uri);
+        }
+        let path = self
+            .resolve(uri)
+            .ok_or_else(|| anyhow::anyhow!("mesh not found: {uri}"))?;
+        load_mesh(path)
+    }
+
+    /// Find an uploaded blob for a URI: exact key first, then by file name so
+    /// uploading `Head.dae` satisfies `package://nao_meshes/.../Head.dae`.
+    fn blob_for(&self, uri: &str) -> Option<&[u8]> {
+        if let Some(bytes) = self.blobs.get(uri) {
+            return Some(bytes);
+        }
+        let base = uri.rsplit('/').next()?;
+        self.blobs.iter().find_map(|(key, bytes)| {
+            (key.rsplit('/').next() == Some(base)).then_some(bytes.as_slice())
+        })
     }
 
     /// Confine all resolutions to `root`: a resolved path is only returned
@@ -191,6 +236,25 @@ mod tests {
     use super::*;
     use std::fs;
     use std::io::Write;
+
+    #[test]
+    fn load_prefers_uploaded_blob_matched_by_filename() {
+        // No filesystem entry exists for this URI; only an uploaded blob,
+        // keyed by bare file name — the web upload case.
+        let resolver = MeshResolver::default().with_blob("part.stl", TRIANGLE_STL.into());
+        let mesh = resolver
+            .load("package://some_pkg/meshes/part.stl")
+            .expect("blob matched by file name");
+        assert_eq!(mesh.vertices.len(), 3);
+
+        // With neither blob nor file, it errors (the scene falls back to a
+        // marker on Err).
+        assert!(
+            MeshResolver::default()
+                .load("package://x/y/missing.stl")
+                .is_err()
+        );
+    }
 
     /// A minimal ASCII STL with one triangle.
     const TRIANGLE_STL: &str = "solid tri

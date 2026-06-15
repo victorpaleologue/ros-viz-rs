@@ -215,15 +215,11 @@ fn visual_mesh(
             let scale = scale
                 .map(|s| Vec3::new(s.0[0] as f32, s.0[1] as f32, s.0[2] as f32))
                 .unwrap_or(Vec3::ONE);
-            let path = resolver.resolve(filename);
-            let Some(path) = path else {
-                tracing::warn!(uri = filename, link = link_name, "mesh not found");
-                return Some((Sphere::new(0.012).into(), Quat::IDENTITY, Vec3::ONE));
-            };
-            match crate::robot::mesh::load_mesh(&path) {
+            // One entry point for filesystem (native) and uploaded bytes (web).
+            match resolver.load(filename) {
                 Ok(loaded) => Some((loaded_to_bevy_mesh(loaded), Quat::IDENTITY, scale)),
                 Err(err) => {
-                    tracing::warn!(?err, ?path, link = link_name, "mesh failed to load");
+                    tracing::warn!(%err, uri = filename, link = link_name, "mesh unavailable");
                     Some((Sphere::new(0.012).into(), Quat::IDENTITY, Vec3::ONE))
                 }
             }
