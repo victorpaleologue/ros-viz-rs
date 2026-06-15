@@ -24,18 +24,24 @@ Issue tracker: <https://github.com/victorpaleologue/ros-viz-rs/issues>
 
 ## Recently shipped
 
-- [x] #18 O(1) topic discovery; #19 mesh resolver sandbox_root; #20 unified
-  env-test lock; #21 web lighting fix; #22 maintainer doc; #23 loading
-  indicator; #24 npm README; #25 .rpm packaging
+- [x] #18 O(1) topic discovery; #19 sandbox_root; #20 env-test lock; #21 web
+  lighting; #22 maintainer doc; #23 loading indicator; #24 npm README;
+  #25 .rpm; #26 egui panel on web via dual WebGL2+WebGPU bundles; #30 robot
+  switcher with hosted UR5e meshes (UR5e default, verified in-browser)
+- [x] Browser **mesh upload** (drop in license-bound meshes locally)
+- [x] Design decisions recapped (docs/wiki/DesignDecisions.md); native⇒web
+  testing axiom documented
 
 ## Open
 
-- [ ] #10 NAO meshes: CC BY-NC-ND, can't be vendored/hosted. Native recipe
-  in README; web mesh fetch tracked in #27.
-- [ ] #17 Zenoh / Foxglove WebSocket transport candidates (seam + recipe
-  ready in Architecture.md)
-- [ ] #26 egui topics panel on web (needs WebGPU)
-- [ ] #27 load meshes over HTTP on the web build (async fetch + allowlist)
+- [ ] #17 **Zenoh** (rmw_zenoh) transport — full plan + key formats in the
+  issue; next-release headline. Needs a Docker rmw_zenoh test stack.
+- [ ] #28 RON value-tree (avoid JSON data loss in the editor)
+- [ ] #29 evaluate roslibrust_codegen vs hand-rolled messages
+- [ ] #27 remainder: generic *remote* HTTP mesh fetch + origin allowlist
+  (hosted UR5e + upload already cover the common cases)
+- [ ] #10 NAO-with-meshes by default on the public demo — license-blocked;
+  mitigated by upload + the switcher
 
 ## Notes
 
