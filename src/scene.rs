@@ -431,6 +431,7 @@ fn robot_bounds(
 ///
 /// Waits a frame or two until render AABBs and global transforms are
 /// propagated, then frames once per robot.
+#[allow(clippy::type_complexity)]
 fn frame_camera_on_new_robot(
     mut commands: Commands,
     mut waited: Local<u32>,
@@ -475,17 +476,17 @@ fn frame_camera_on_new_robot(
 /// Spawn the standard viewing rig: an auto-framing camera plus
 /// [`spawn_lights`], shared by the app and examples.
 pub fn spawn_viewing_rig(commands: &mut Commands) {
-    let mut camera = commands.spawn((
-        Camera3d::default(),
-        AutoFrameCamera,
-        crate::camera::OrbitController::default(),
-        Transform::from_xyz(2.0, 1.5, 2.0).looking_at(Vec3::ZERO, Vec3::Y),
-    ));
+    let _camera = commands
+        .spawn((
+            Camera3d::default(),
+            AutoFrameCamera,
+            crate::camera::OrbitController::default(),
+            Transform::from_xyz(2.0, 1.5, 2.0).looking_at(Vec3::ZERO, Vec3::Y),
+        ))
+        .id();
     // MSAA is unreliable on many Android GPUs (matches Bevy's mobile example).
     #[cfg(target_os = "android")]
-    camera.insert(Msaa::Off);
-    // Keep `camera` used on every platform (the insert above is Android-only).
-    let _ = camera.id();
+    commands.entity(_camera).insert(Msaa::Off);
     spawn_lights(commands);
 }
 
