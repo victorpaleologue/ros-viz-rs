@@ -5,19 +5,48 @@ One-time configuration only the repository owner can do. Everything else
 [Architecture](wiki/Architecture.md) and the workflows in
 [`.github/workflows/`](../.github/workflows/).
 
-## Release secrets
+Registry names: the crate publishes to crates.io as **`ros-viz`** (so
+`cargo install ros-viz` works), while the npm/browser package keeps the
+**`ros-viz-rs`** name. Both are free today; the first successful publish on
+each registry claims them. `cargo install ros-viz` installs two equivalent
+commands, `ros-viz` and the `ros-viz-rs` alias; the distributed packages,
+app bundles and binaries stay branded `ros-viz-rs`.
 
-Add under **Settings → Secrets and variables → Actions**. Without them the
-matching release jobs fail harmlessly (`continue-on-error`); the GitHub
-release and the platform binaries still publish.
+## crates.io publishing (Trusted Publishing, no stored token)
 
-| Secret | Used by | Get it from |
-|---|---|---|
-| `CARGO_REGISTRY_TOKEN` | `crates-io` job in `release.yml` | crates.io → Account Settings → API Tokens (scope: publish-update) |
-| `NPM_TOKEN` | `npm` job in `release.yml` | npmjs.com → Access Tokens → Granular/Automation token with publish rights |
+The `crates-io` job in `release.yml` uses [crates.io Trusted
+Publishing](https://crates.io/docs/trusted-publishing): GitHub Actions
+authenticates over OIDC (`rust-lang/crates-io-auth-action` + `id-token:
+write`) and gets a short-lived token at publish time — **no
+`CARGO_REGISTRY_TOKEN` secret to create, rotate, or leak.**
 
-The package names `ros-viz-rs` are currently free on both registries; claim
-them with the first successful publish.
+A trusted publisher can only be attached to a crate that already exists, so
+there's a one-time bootstrap to claim the `ros-viz` name:
+
+1. Sign in to <https://crates.io> with GitHub and verify your email
+   (Account Settings).
+2. **One-time first publish** to claim the name: create a short-lived API
+   token (Account Settings → **API Tokens** → *New Token*, scope
+   `publish-update`), run `cargo login` then `cargo publish` from a clean
+   checkout of the tag, and **delete the token** afterwards. This is the only
+   time a token is needed — CI can't publish a crate that doesn't exist yet.
+3. On the new crate's page: **Settings → Trusted Publishing → Add** with
+   - Repository owner: `victorpaleologue`
+   - Repository name: `ros-viz-rs`
+   - Workflow filename: `release.yml`
+   - Environment: *(leave blank)*
+
+From then on every tagged release publishes automatically over OIDC, with no
+stored secret. Until step 3 is done the `crates-io` job is a harmless no-op
+(`continue-on-error`); the GitHub release and platform binaries publish
+regardless.
+
+## npm publishing
+
+The `npm` job needs an `NPM_TOKEN` secret (Settings → Secrets and variables →
+Actions) — an npm Granular/Automation token with publish rights. npm has no
+OIDC trusted-publishing equivalent here, so this one stays a stored secret.
+Without it the job fails harmlessly (`continue-on-error`).
 
 ## GitHub Pages
 

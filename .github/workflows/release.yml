@@ -77,8 +77,19 @@ jobs:
     if: needs.tag.outputs.created == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # Will fail until CARGO_REGISTRY_TOKEN is configured in repo secrets.
+    # Publishes via crates.io Trusted Publishing (OIDC) — no long-lived token.
+    # Stays no-op until the trusted publisher is configured on the crate
+    # (crates.io -> ros-viz -> Settings -> Trusted Publishing: this repo +
+    # workflow `release.yml`). That requires the crate to already exist, so the
+    # *first* publish that claims the `ros-viz` name is a one-time manual
+    # `cargo publish` (see docs/MAINTAINER.md). continue-on-error keeps the
+    # GitHub release green until then.
     continue-on-error: true
+    # id-token: write lets the auth action mint a short-lived crates.io token
+    # over OIDC; this job doesn't push to the repo, so contents stays read.
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -89,8 +100,11 @@ jobs:
           sudo apt-get install -y libasound2-dev libudev-dev pkg-config libwayland-dev libxkbcommon-dev
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - name: Authenticate with crates.io (Trusted Publishing)
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
       - name: Publish to crates.io
-        run: cargo publish --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+        run: cargo publish --token "${{ steps.auth.outputs.token }}"
 
   macos-app:
     needs: [tag, github-release]
@@ -225,6 +239,11 @@ jobs:
           cargo install wasm-pack --locked
           wasm-pack build --target web --out-dir web/pkg -- \
             --no-default-features --features rosbridge
+          # The crate is published to crates.io as `ros-viz`, but the browser
+          # package keeps its established `ros-viz-rs` name (matches the import
+          # in web/npm-README.md), so override the name wasm-pack derived from
+          # the crate.
+          ( cd web/pkg && npm pkg set name=ros-viz-rs )
           # wasm-pack copies the crate README (about the native tool); the
           # npm page wants the browser-usage one instead.
           cp web/npm-README.md web/pkg/README.md

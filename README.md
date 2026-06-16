@@ -27,6 +27,31 @@ Robots without meshes on disk degrade gracefully to a skeleton of markers:
 
 ![NAO skeleton fallback](docs/images/nao_skeleton.png)
 
+## Install
+
+Install the native binary straight from cargo, then launch it:
+
+```bash
+cargo install ros-viz           # from crates.io
+ros-viz                         # run it (the `ros-viz-rs` command is an alias)
+ros-viz --demo                  # ...or watch the embedded NAO wave
+```
+
+Not on crates.io yet? Install the latest from git instead:
+
+```bash
+cargo install --git https://github.com/victorpaleologue/ros-viz-rs
+```
+
+Building needs the usual Bevy system libraries (on Linux:
+`libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev`). All the flags
+shown under [Quick start](#quick-start) work the same on the installed
+`ros-viz` command as with `cargo run --`.
+
+Prefer a package? Pre-built macOS (`.dmg`), Linux (`.deb`/`.rpm`) and Windows
+(`.exe`) artifacts are attached to each
+[GitHub release](https://github.com/victorpaleologue/ros-viz-rs/releases).
+
 ## Quick start
 
 ```bash
@@ -93,7 +118,6 @@ macOS (.dmg), Linux (.deb) and Windows (.exe) artifacts.
 
 - Architecture notes: [docs/wiki/Architecture.md](docs/wiki/Architecture.md)
 - Maintainer setup (secrets, releases): [docs/MAINTAINER.md](docs/MAINTAINER.md)
-- Living plan: [CURRENT_PLAN.md](CURRENT_PLAN.md)
 - Issues: <https://github.com/victorpaleologue/ros-viz-rs/issues>
 
 ## License

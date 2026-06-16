@@ -10,7 +10,7 @@ file instead and fix it there.
   [`src/lib.rs`](src/lib.rs) (run `cargo doc --open`) and
   [`docs/wiki/Architecture.md`](docs/wiki/Architecture.md). These are the
   source of truth for how the pieces fit; update them when the design moves.
-- **What's done / in flight** — [`CURRENT_PLAN.md`](CURRENT_PLAN.md) and the
+- **What's done / in flight** — the
   [issue tracker](https://github.com/victorpaleologue/ros-viz-rs/issues).
 - **User-facing usage & recipes** — [`README.md`](README.md).
 - **Owner-only setup (secrets, releases)** — [`docs/MAINTAINER.md`](docs/MAINTAINER.md).
