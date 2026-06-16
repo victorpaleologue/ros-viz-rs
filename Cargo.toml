@@ -16,7 +16,7 @@ repository = "https://github.com/victorpaleologue/ros-viz-rs"
 readme = "README.md"
 keywords = ["ros", "ros2", "robot", "urdf", "visualization"]
 categories = ["visualization", "science::robotics"]
-exclude = ["test-data", ".test_outputs", ".github", "docs"]
+exclude = ["test-data", ".test_outputs", ".github", "docs", "android"]
 
 [package.metadata.deb]
 # Keep the Debian package name independent of the crate rename to `ros-viz`.

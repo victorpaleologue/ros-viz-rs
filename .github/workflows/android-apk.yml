@@ -1,0 +1,75 @@
+# Builds an installable (debug-signed) Android APK and uploads it as a
+# workflow artifact for on-device testing. Runs on the Android feature branch
+# and on demand. The arm64 library itself is also gated in ci.yml; this adds
+# the packaging step (cargo-ndk -> jniLibs -> Gradle GameActivity APK).
+name: Android APK
+
+on:
+  push:
+    branches: [claude/android-app]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK platform and build-tools
+        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Set up Android NDK
+        id: ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27c
+          add-to-path: false
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Build native library (arm64, rosbridge) into jniLibs
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          cargo install cargo-ndk --locked
+          cargo ndk -t arm64-v8a -o android/app/src/main/jniLibs \
+            build --release --lib --no-default-features --features rosbridge
+
+      - name: Assemble debug APK
+        working-directory: android
+        run: gradle assembleDebug --no-daemon
+
+      - name: Stage APK
+        run: |
+          apk=$(find android/app/build/outputs/apk -name '*.apk' | head -1)
+          test -n "$apk" || { echo "no APK produced"; exit 1; }
+          cp "$apk" ros-viz-rs-debug-arm64.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ros-viz-rs-android-apk
+          path: ros-viz-rs-debug-arm64.apk
+          if-no-files-found: error

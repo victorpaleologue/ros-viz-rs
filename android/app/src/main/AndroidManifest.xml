@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- The rosbridge WebSocket client is the only thing needing network. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:label="ros-viz-rs"
+        android:allowBackup="false">
+
+        <!-- GameActivity from the games-activity AAR; android.app.lib_name
+             must match the Rust cdylib (libros_viz_rs.so -> "ros_viz_rs"). -->
+        <activity
+            android:name="com.google.androidgamesdk.GameActivity"
+            android:exported="true"
+            android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|density|uiMode"
+            android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
+            <meta-data
+                android:name="android.app.lib_name"
+                android:value="ros_viz_rs" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
