@@ -31,4 +31,7 @@ dependencies {
     // Provides com.google.androidgamesdk.GameActivity; pairs with the
     // android-activity 0.6 GameActivity backend Bevy 0.18 uses.
     implementation 'androidx.games:games-activity:3.0.5'
+    // GameActivity extends AppCompatActivity, so appcompat must be present
+    // (and the activity must use an AppCompat theme) or it won't even load.
+    implementation 'androidx.appcompat:appcompat:1.6.1'
 }
