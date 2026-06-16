@@ -4,7 +4,7 @@
 
 - Run `cargo fmt`, `cargo clippy -- -D warnings`, and `cargo test` before pushing.
 - Keep commits scoped to milestones with a measurable test.
-- Update CURRENT_PLAN.md and docs/wiki/DesignDecisions.md when plans or architecture change.
+- Update docs/wiki/DesignDecisions.md when plans or architecture change.
 - Prefer small, reviewable PRs and document notable choices in design notes.
 
 ## Code style
