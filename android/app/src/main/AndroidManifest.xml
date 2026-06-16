@@ -14,7 +14,7 @@
             android:name="com.google.androidgamesdk.GameActivity"
             android:exported="true"
             android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|density|uiMode"
-            android:theme="@style/Theme.AppCompat.NoActionBar">
+            android:theme="@style/Theme.RosVizRs">
             <meta-data
                 android:name="android.app.lib_name"
                 android:value="ros_viz_rs" />

@@ -123,6 +123,10 @@ pub fn build_app(options: &Options) -> App {
         });
         // The runtime connection panel (switch demo / rosbridge / DDS).
         crate::connection_ui::register(&mut app, options);
+        // On Android, the only way out of the app is the Back button; wire it
+        // to a clean exit (it is otherwise ignored — see `android_back_exits`).
+        #[cfg(target_os = "android")]
+        app.add_systems(Update, android_back_exits);
         app.add_systems(Startup, |mut commands: Commands| {
             spawn_viewing_rig(&mut commands);
         });
@@ -150,6 +154,26 @@ pub fn build_app(options: &Options) -> App {
     });
 
     app
+}
+
+/// Exit the app when the Android Back button is pressed.
+///
+/// winit 0.30 delivers Android's `BACK` keycode only as the logical
+/// [`Key::BrowserBack`] — it has no physical [`KeyCode`] — so we match on the
+/// logical key rather than `ButtonInput<KeyCode>`, which would never fire.
+/// Without this the button is swallowed and the user has no way to leave.
+#[cfg(target_os = "android")]
+fn android_back_exits(
+    mut keys: MessageReader<bevy::input::keyboard::KeyboardInput>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    use bevy::input::ButtonState;
+    use bevy::input::keyboard::Key;
+    for key in keys.read() {
+        if key.state == ButtonState::Pressed && key.logical_key == Key::BrowserBack {
+            exit.write(AppExit::Success);
+        }
+    }
 }
 
 /// Drive a snapshot-mode app until a robot is rendered, then write the PNG.

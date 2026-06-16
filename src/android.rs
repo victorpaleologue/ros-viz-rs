@@ -7,10 +7,10 @@
 //!
 //! Like the browser build, Android uses the rosbridge transport only (DDS
 //! multicast is unreliable on mobile networks), so this crate must be built
-//! with `--no-default-features --features rosbridge`. With no way yet to type
-//! a rosbridge URL on the device, the app launches the embedded NAO demo so
-//! it shows something useful out of the box; a connect screen is tracked in
-//! the Android issue.
+//! with `--no-default-features --features rosbridge`. The app launches the
+//! embedded NAO demo so it shows something useful out of the box; from there
+//! the runtime connection bar (see [`crate::connection_ui`]) lets the user
+//! type a rosbridge URL and switch to a live robot.
 
 use bevy::prelude::*;
 
