@@ -1,0 +1,40 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'eu.palaio.rosvizrs'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'eu.palaio.rosvizrs'
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName '1.2.0'
+        // arm64 for real phones; x86_64 so the CI emulator can run it too.
+        ndk {
+            abiFilters 'arm64-v8a', 'x86_64'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+    // jniLibs default srcDir (src/main/jniLibs) holds libros_viz_rs.so, placed
+    // there by `cargo ndk -o app/src/main/jniLibs ...` before the Gradle build.
+}
+
+dependencies {
+    // Provides com.google.androidgamesdk.GameActivity. The version must match
+    // the JNI methods android-activity registers: per its changelog, 0.6.0
+    // (Bevy 0.18's pinned version) requires GameActivity 2.0.2. Newer AARs
+    // (3.x/4.x) dropped onTouchEventNative, so the native RegisterNatives
+    // aborts at startup. (android-activity 0.6.1 is the one that needs 4.x.)
+    implementation 'androidx.games:games-activity:2.0.2'
+    // GameActivity extends AppCompatActivity, so appcompat must be present
+    // (and the activity must use an AppCompat theme) or it won't even load.
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+}

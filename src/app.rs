@@ -22,7 +22,7 @@ use ros2_client::ros2::{
     Duration as RosDuration, QosPolicyBuilder,
     policy::{Durability, History, Reliability},
 };
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 use tracing_subscriber::EnvFilter;
 
 use crate::options::Options;
@@ -148,11 +148,24 @@ pub fn build_app(options: &Options) -> App {
             window.fit_canvas_to_parent = true;
             window.prevent_default_event_handling = false;
         }
+        // On Android the activity owns the surface: go borderless fullscreen.
+        #[cfg(target_os = "android")]
+        {
+            window.mode = bevy::window::WindowMode::BorderlessFullscreen(
+                bevy::window::MonitorSelection::Primary,
+            );
+            window.resizable = false;
+        }
         app.add_plugins(DefaultPlugins.set(bevy::window::WindowPlugin {
             primary_window: Some(window),
             ..Default::default()
         }));
+        // Only redraw on input/events instead of continuously, to spare the
+        // battery on mobile.
+        #[cfg(target_os = "android")]
+        app.insert_resource(bevy::winit::WinitSettings::mobile());
         app.add_plugins(EguiPlugin::default());
+        app.add_plugins(crate::camera::OrbitCameraPlugin);
         app.add_plugins(TopicsTreePlugin {
             panel_mode: TopicsPanelMode::Side,
         });
@@ -398,7 +411,7 @@ fn spawn_pending_robot(
     spawn_robot(&mut commands, &mut meshes, &mut materials, model, &resolver);
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 fn init_tracing() {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     let _ = tracing_subscriber::fmt()
@@ -406,9 +419,11 @@ fn init_tracing() {
         .try_init();
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(any(target_arch = "wasm32", target_os = "android"))]
 fn init_tracing() {
-    // Bevy's LogPlugin routes tracing to the browser console on wasm.
+    // Bevy's LogPlugin routes tracing to the browser console (wasm) and to
+    // logcat (Android); a second subscriber here would just claim the global
+    // slot and send logs nowhere visible.
 }
 
 #[cfg(test)]

@@ -65,6 +65,32 @@ Every PR must bump the `version` in `Cargo.toml` (enforced by the
 - Windows `.exe`
 - crates.io + npm publishes (token-gated, above)
 
+## Android (experimental)
+
+The app builds for Android: a `#[bevy_main]` entry point
+([`src/android.rs`](../src/android.rs)) into the shared `crate::app::run`, a
+borderless-fullscreen window, MSAA off, mobile-tuned redraw, and mouse/touch
+orbit controls ([`src/camera.rs`](../src/camera.rs)). Like the web build it is
+**rosbridge-only** (DDS multicast is unreliable on mobile); with no on-device
+connect screen yet, it launches the embedded NAO demo. Uses Bevy's default
+**GameActivity** backend.
+
+CI cross-compiles the arm64 library on every PR (the `android-build` job in
+`ci.yml`, via `cargo-ndk` + the NDK), so the Android code is type-checked
+continuously:
+
+```bash
+cargo ndk -t arm64-v8a build --release --lib --no-default-features --features rosbridge
+```
+
+What's **not** done yet (tracked in the Android issue): packaging that `.so`
+into a signed, installable APK (GameActivity needs Gradle or `xbuild`, not
+`cargo-apk`), a Play Store release (signing keystore would live in repo
+secrets, like the other release secrets above), and on-device validation of
+the touch controls. `[package.metadata.android]` in `Cargo.toml` already
+carries the package id, label and `INTERNET` permission for whichever
+packaging tool we settle on.
+
 ## Optional polish
 
 - **macOS code signing / notarization** — the `.app` is currently unsigned,

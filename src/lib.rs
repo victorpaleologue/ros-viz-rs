@@ -84,7 +84,10 @@
 //!
 //! The browser build uses `--no-default-features --features rosbridge`.
 
+#[cfg(target_os = "android")]
+pub mod android;
 pub mod app;
+pub mod camera;
 pub mod demo;
 pub mod diagnostics;
 #[cfg(feature = "ros2")]

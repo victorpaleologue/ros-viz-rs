@@ -1,0 +1,111 @@
+# Builds an installable (debug-signed) Android APK and smoke-tests it on an
+# emulator so a startup crash is caught in CI (with logcat) rather than only on
+# a physical device. Builds both arm64 (real phones) and x86_64 (emulator).
+name: Android APK
+
+on:
+  push:
+    branches: [claude/android-app]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, x86_64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK platform and build-tools
+        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Set up Android NDK
+        id: ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27c
+          add-to-path: false
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Build native libraries (arm64 + x86_64, rosbridge) into jniLibs
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          cargo install cargo-ndk --locked
+          cargo ndk -t arm64-v8a -t x86_64 -o android/app/src/main/jniLibs \
+            build --release --lib --no-default-features --features rosbridge
+          # Our native deps (oboe/wgpu) link the C++ shared runtime, which
+          # Android does not provide to apps — bundle it per ABI or dlopen of
+          # libros_viz_rs.so fails with "libc++_shared.so not found".
+          sysroot="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib"
+          cp "$sysroot/aarch64-linux-android/libc++_shared.so" android/app/src/main/jniLibs/arm64-v8a/
+          cp "$sysroot/x86_64-linux-android/libc++_shared.so"  android/app/src/main/jniLibs/x86_64/
+
+      - name: Assemble debug APK
+        working-directory: android
+        run: gradle assembleDebug --no-daemon
+
+      - name: Stage APK
+        run: |
+          apk=$(find android/app/build/outputs/apk -name '*.apk' | head -1)
+          test -n "$apk" || { echo "no APK produced"; exit 1; }
+          cp "$apk" ros-viz-rs-debug.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ros-viz-rs-android-apk
+          path: ros-viz-rs-debug.apk
+          if-no-files-found: error
+
+  smoke-test:
+    needs: apk
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ros-viz-rs-android-apk
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Launch emulator and check the app starts
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          # Single line: the action runs `script` line by line, so the real
+          # logic lives in the committed bash file.
+          script: bash android/scripts/smoke-test.sh
