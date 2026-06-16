@@ -5,7 +5,7 @@ name: Android APK
 
 on:
   push:
-    branches: [claude/android-app]
+    branches: [claude/android-app, claude/connection-ui]
   workflow_dispatch:
 
 permissions:
