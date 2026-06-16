@@ -37,6 +37,13 @@ pid="$(adb shell pidof "$PKG" | tr -d '\r')"
 shot="${GITHUB_WORKSPACE:-.}/app-screenshot.png"
 if adb exec-out screencap -p > "$shot" 2>/dev/null && [ -s "$shot" ]; then
   echo "Captured screenshot -> $shot ($(wc -c < "$shot") bytes)"
+  # Also emit it base64 between markers: CI artifacts live on a storage host
+  # that egress policies often block, but job logs are always fetchable, so
+  # this lets the rendered frame be reviewed straight from the log.
+  echo "----BEGIN_SCREENSHOT_B64----"
+  base64 -w0 "$shot" 2>/dev/null || base64 "$shot"
+  echo
+  echo "----END_SCREENSHOT_B64----"
 else
   echo "::warning::Could not capture a screenshot"
   rm -f "$shot"
