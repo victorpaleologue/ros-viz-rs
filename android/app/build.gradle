@@ -28,9 +28,11 @@ android {
 }
 
 dependencies {
-    // Provides com.google.androidgamesdk.GameActivity; pairs with the
-    // android-activity 0.6 GameActivity backend Bevy 0.18 uses.
-    implementation 'androidx.games:games-activity:3.0.5'
+    // Provides com.google.androidgamesdk.GameActivity. The version must match
+    // the JNI methods android-activity 0.6 (Bevy 0.18) registers — 0.6 targets
+    // GameActivity 4.x; older AARs (e.g. 3.0.5) lack onTouchEventNative and
+    // abort at startup with "RegisterNatives failed".
+    implementation 'androidx.games:games-activity:4.0.0'
     // GameActivity extends AppCompatActivity, so appcompat must be present
     // (and the activity must use an AppCompat theme) or it won't even load.
     implementation 'androidx.appcompat:appcompat:1.6.1'
