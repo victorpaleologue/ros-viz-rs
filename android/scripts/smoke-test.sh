@@ -31,6 +31,17 @@ done
 
 pid="$(adb shell pidof "$PKG" | tr -d '\r')"
 
+# Grab a framebuffer screenshot so the rendered UI (the egui connection bar,
+# which can't be seen on a headless CI run otherwise) is reviewable as an
+# artifact. Best-effort: never fail the smoke test over a missing screenshot.
+shot="${GITHUB_WORKSPACE:-.}/app-screenshot.png"
+if adb exec-out screencap -p > "$shot" 2>/dev/null && [ -s "$shot" ]; then
+  echo "Captured screenshot -> $shot ($(wc -c < "$shot") bytes)"
+else
+  echo "::warning::Could not capture a screenshot"
+  rm -f "$shot"
+fi
+
 echo "==================== CRASH BUFFER ===================="
 adb logcat -d -b crash | tail -n 150
 echo "==================== APP / NATIVE LOG (filtered) ===================="

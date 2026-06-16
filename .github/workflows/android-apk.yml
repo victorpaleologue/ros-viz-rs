@@ -109,3 +109,12 @@ jobs:
           # Single line: the action runs `script` line by line, so the real
           # logic lives in the committed bash file.
           script: bash android/scripts/smoke-test.sh
+
+      # The framebuffer grab from the smoke test, so the rendered UI can be
+      # eyeballed (portrait + status bar, like a real phone) without a device.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ros-viz-rs-android-screenshot
+          path: app-screenshot.png
+          if-no-files-found: warn
