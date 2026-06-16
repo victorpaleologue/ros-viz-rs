@@ -33,7 +33,12 @@ pid="$(adb shell pidof "$PKG" | tr -d '\r')"
 
 # Grab a framebuffer screenshot so the rendered UI (the egui connection bar,
 # which can't be seen on a headless CI run otherwise) is reviewable as an
-# artifact. Best-effort: never fail the smoke test over a missing screenshot.
+# artifact. The activity gets stopped during the headless watch above (winit
+# logs onStop/onDestroy), so bring it back to the foreground and let it render
+# a few frames first, or we'd just photograph the launcher. Best-effort: never
+# fail the smoke test over a missing screenshot.
+adb shell am start -n "$PKG/$ACT" >/dev/null 2>&1 || true
+sleep 6
 shot="${GITHUB_WORKSPACE:-.}/app-screenshot.png"
 if adb exec-out screencap -p > "$shot" 2>/dev/null && [ -s "$shot" ]; then
   echo "Captured screenshot -> $shot ($(wc -c < "$shot") bytes)"
