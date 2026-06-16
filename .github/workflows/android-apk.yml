@@ -1,7 +1,6 @@
-# Builds an installable (debug-signed) Android APK and uploads it as a
-# workflow artifact for on-device testing. Runs on the Android feature branch
-# and on demand. The arm64 library itself is also gated in ci.yml; this adds
-# the packaging step (cargo-ndk -> jniLibs -> Gradle GameActivity APK).
+# Builds an installable (debug-signed) Android APK and smoke-tests it on an
+# emulator so a startup crash is caught in CI (with logcat) rather than only on
+# a physical device. Builds both arm64 (real phones) and x86_64 (emulator).
 name: Android APK
 
 on:
@@ -24,7 +23,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android
+          targets: aarch64-linux-android, x86_64-linux-android
 
       - uses: Swatinem/rust-cache@v2
 
@@ -50,12 +49,12 @@ jobs:
         with:
           gradle-version: "8.7"
 
-      - name: Build native library (arm64, rosbridge) into jniLibs
+      - name: Build native libraries (arm64 + x86_64, rosbridge) into jniLibs
         env:
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
         run: |
           cargo install cargo-ndk --locked
-          cargo ndk -t arm64-v8a -o android/app/src/main/jniLibs \
+          cargo ndk -t arm64-v8a -t x86_64 -o android/app/src/main/jniLibs \
             build --release --lib --no-default-features --features rosbridge
 
       - name: Assemble debug APK
@@ -66,10 +65,63 @@ jobs:
         run: |
           apk=$(find android/app/build/outputs/apk -name '*.apk' | head -1)
           test -n "$apk" || { echo "no APK produced"; exit 1; }
-          cp "$apk" ros-viz-rs-debug-arm64.apk
+          cp "$apk" ros-viz-rs-debug.apk
 
       - uses: actions/upload-artifact@v4
         with:
           name: ros-viz-rs-android-apk
-          path: ros-viz-rs-debug-arm64.apk
+          path: ros-viz-rs-debug.apk
           if-no-files-found: error
+
+  smoke-test:
+    needs: apk
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ros-viz-rs-android-apk
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Launch emulator and check the app starts
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            adb install -r ros-viz-rs-debug.apk
+            adb logcat -c
+            adb shell am start -n eu.palaio.rosvizrs/com.google.androidgamesdk.GameActivity
+            # Give it time to initialize Bevy/wgpu (or crash).
+            sleep 30
+            adb logcat -d > logcat.txt
+            echo "==================== LOGCAT (ros-viz-rs / crash) ===================="
+            grep -iE "ros.?viz|rosviz|bevy|wgpu|RustStdoutStderr|AndroidRuntime|libc|GameActivity|UnsatisfiedLink|FATAL|panic" logcat.txt | tail -n 200 || true
+            echo "==================== END LOGCAT ===================="
+            if grep -qE "FATAL EXCEPTION|Fatal signal|UnsatisfiedLinkError|force-finishing|ANR in eu.palaio" logcat.txt; then
+              echo "::error::App crashed at startup (see logcat above)"
+              exit 1
+            fi
+            if [ -z "$(adb shell pidof eu.palaio.rosvizrs || true)" ]; then
+              echo "::error::App process is not running 30s after launch (crashed or exited)"
+              exit 1
+            fi
+            echo "Smoke test passed: eu.palaio.rosvizrs is running."
+
+      - name: Upload full logcat
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-smoke-logcat
+          path: logcat.txt
+          if-no-files-found: ignore
