@@ -4,7 +4,7 @@
 # [package.metadata.*] sections below, which pin those back.
 [package]
 name = "ros-viz"
-version = "1.1.0"
+version = "1.2.0"
 edition = "2024"
 # Two bin targets (ros-viz + the ros-viz-rs alias) make a bare `cargo run`
 # ambiguous; pick the canonical one so `cargo run`/`cargo run --release` keep
@@ -39,6 +39,25 @@ assets = [
     { source = "README.md", dest = "/usr/share/doc/ros-viz-rs/README.md", mode = "0644" },
 ]
 auto-req = "auto"
+
+# Android APK metadata, read by the packaging tool (cargo-apk / xbuild). The
+# native library is compiled with `--no-default-features --features rosbridge`
+# (DDS multicast is unreliable on mobile; rosbridge is the transport, as on
+# the web). INTERNET is the one runtime permission the rosbridge client needs.
+[package.metadata.android]
+package = "eu.palaio.rosvizrs"
+build_targets = ["aarch64-linux-android"]
+apk_label = "ros-viz-rs"
+
+[package.metadata.android.sdk]
+min_sdk_version = 24
+target_sdk_version = 34
+
+[[package.metadata.android.uses_permission]]
+name = "android.permission.INTERNET"
+
+[package.metadata.android.application]
+label = "ros-viz-rs"
 
 
 [features]

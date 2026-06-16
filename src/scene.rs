@@ -437,7 +437,10 @@ fn frame_camera_on_new_robot(
     robots: Query<(Entity, &RobotHandle, &Transform), Without<Framed>>,
     children: Query<&Children>,
     aabbs: Query<(&GlobalTransform, &bevy::camera::primitives::Aabb)>,
-    mut cameras: Query<&mut Transform, (With<AutoFrameCamera>, Without<RobotHandle>)>,
+    mut cameras: Query<
+        (&mut Transform, Option<&mut crate::camera::OrbitController>),
+        (With<AutoFrameCamera>, Without<RobotHandle>),
+    >,
 ) {
     let Some((entity, robot, root_transform)) = robots.iter().next() else {
         return;
@@ -458,8 +461,13 @@ fn frame_camera_on_new_robot(
     // Pull back far enough for a ~50deg vertical FOV with some margin.
     let distance = (radius * 2.4).max(0.3);
     let eye = center + Vec3::new(distance * 0.75, distance * 0.5, distance * 0.75);
-    for mut camera in cameras.iter_mut() {
-        *camera = Transform::from_translation(eye).looking_at(center, Vec3::Y);
+    for (mut transform, orbit) in cameras.iter_mut() {
+        *transform = Transform::from_translation(eye).looking_at(center, Vec3::Y);
+        // Hand the framed pose to the orbit controls so they take over from
+        // here (no-op when the camera has none, e.g. headless/snapshot).
+        if let Some(mut orbit) = orbit {
+            orbit.aim_from_eye(center, eye);
+        }
     }
     commands.entity(entity).insert(Framed);
 }
@@ -467,11 +475,17 @@ fn frame_camera_on_new_robot(
 /// Spawn the standard viewing rig: an auto-framing camera plus
 /// [`spawn_lights`], shared by the app and examples.
 pub fn spawn_viewing_rig(commands: &mut Commands) {
-    commands.spawn((
+    let mut camera = commands.spawn((
         Camera3d::default(),
         AutoFrameCamera,
+        crate::camera::OrbitController::default(),
         Transform::from_xyz(2.0, 1.5, 2.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
+    // MSAA is unreliable on many Android GPUs (matches Bevy's mobile example).
+    #[cfg(target_os = "android")]
+    camera.insert(Msaa::Off);
+    // Keep `camera` used on every platform (the insert above is Android-only).
+    let _ = camera.id();
     spawn_lights(commands);
 }
 
