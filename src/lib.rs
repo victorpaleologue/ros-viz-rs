@@ -88,6 +88,8 @@
 pub mod android;
 pub mod app;
 pub mod camera;
+pub mod connection;
+pub mod connection_ui;
 pub mod demo;
 pub mod diagnostics;
 #[cfg(feature = "ros2")]

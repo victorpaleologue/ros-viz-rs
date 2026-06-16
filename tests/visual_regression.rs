@@ -197,7 +197,8 @@ fn demo_mode_renders_and_waves() {
         height: HEIGHT,
     });
     app.add_plugins(RobotScenePlugin);
-    app.add_plugins(ros_viz_rs::demo::DemoPlugin);
+    ros_viz_rs::demo::register_systems(&mut app);
+    ros_viz_rs::demo::connect(app.world_mut());
     app.insert_resource(ClearColor(Color::srgb(0.13, 0.14, 0.17)));
     app.add_systems(
         Update,

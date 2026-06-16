@@ -38,23 +38,21 @@ use crate::ros_plugin::{ReadersAndWriters, RosSession, TopicInfo, TopicKind};
 // ---------------------------------------------------------------------------
 // Plugin
 // ---------------------------------------------------------------------------
-/// Bevy plugin that manages automatic ROS 2 subscriptions and publishers,
-/// supposing there already a `RosSession` running and discovering topics.
-pub struct TopicIOPlugin;
-
-impl Plugin for TopicIOPlugin {
-    fn build(&self, app: &mut App) {
-        app.init_resource::<MessageRegistry>();
-        app.add_systems(
-            Update,
-            (
-                auto_manage_topics,
-                poll_subscription_values,
-                handle_publish_requests,
-            )
-                .chain(),
-        );
-    }
+/// Register automatic ROS 2 subscription/publication systems. They are gated
+/// on the [`RosSession`] resource, so they only run while a DDS session is
+/// connected; topic discovery is driven by `ros_plugin`.
+pub fn register_systems(app: &mut App) {
+    app.init_resource::<MessageRegistry>();
+    app.add_systems(
+        Update,
+        (
+            auto_manage_topics,
+            poll_subscription_values,
+            handle_publish_requests,
+        )
+            .chain()
+            .run_if(resource_exists::<RosSession>),
+    );
 }
 
 // ---------------------------------------------------------------------------
