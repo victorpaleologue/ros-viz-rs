@@ -21,6 +21,11 @@ android {
     buildTypes {
         release {
             minifyEnabled false
+            // Sign release builds with the auto-generated debug keystore so the
+            // APK is installable (and emulator-testable) without managing a
+            // release keystore/secrets in CI. For direct distribution, not
+            // Play Store uploads.
+            signingConfig signingConfigs.debug
         }
     }
     // jniLibs default srcDir (src/main/jniLibs) holds libros_viz_rs.so, placed

@@ -1,11 +1,17 @@
-# Builds an installable (debug-signed) Android APK and smoke-tests it on an
-# emulator so a startup crash is caught in CI (with logcat) rather than only on
-# a physical device. Builds both arm64 (real phones) and x86_64 (emulator).
+# Builds an installable Android APK and smoke-tests it on an emulator so a
+# startup crash is caught in CI (with logcat) rather than only on a physical
+# device. Builds both arm64 (real phones) and x86_64 (emulator).
+#
+# Build variant follows the trigger: pushes to `main` build a (debug-signed)
+# RELEASE APK; everything else — pull requests and manual runs — builds a
+# DEBUG APK. Release APKs are signed with the auto-generated debug keystore so
+# they stay installable/testable without release-signing secrets.
 name: Android APK
 
 on:
+  pull_request:
   push:
-    branches: [claude/android-app, claude/connection-ui]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -18,8 +24,21 @@ jobs:
   apk:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    outputs:
+      variant: ${{ steps.variant.outputs.name }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Select build variant (release on main, debug otherwise)
+        id: variant
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "name=release" >> "$GITHUB_OUTPUT"
+            echo "task=assembleRelease" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=debug" >> "$GITHUB_OUTPUT"
+            echo "task=assembleDebug" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -63,20 +82,20 @@ jobs:
           cp "$sysroot/aarch64-linux-android/libc++_shared.so" android/app/src/main/jniLibs/arm64-v8a/
           cp "$sysroot/x86_64-linux-android/libc++_shared.so"  android/app/src/main/jniLibs/x86_64/
 
-      - name: Assemble debug APK
+      - name: Assemble ${{ steps.variant.outputs.name }} APK
         working-directory: android
-        run: gradle assembleDebug --no-daemon
+        run: gradle ${{ steps.variant.outputs.task }} --no-daemon
 
       - name: Stage APK
         run: |
-          apk=$(find android/app/build/outputs/apk -name '*.apk' | head -1)
+          apk=$(find "android/app/build/outputs/apk/${{ steps.variant.outputs.name }}" -name '*.apk' | head -1)
           test -n "$apk" || { echo "no APK produced"; exit 1; }
-          cp "$apk" ros-viz-rs-debug.apk
+          cp "$apk" ros-viz-rs.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ros-viz-rs-android-apk
-          path: ros-viz-rs-debug.apk
+          name: ros-viz-rs-android-apk-${{ steps.variant.outputs.name }}
+          path: ros-viz-rs.apk
           if-no-files-found: error
 
   smoke-test:
@@ -88,7 +107,7 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: ros-viz-rs-android-apk
+          name: ros-viz-rs-android-apk-${{ needs.apk.outputs.variant }}
 
       - name: Enable KVM
         run: |

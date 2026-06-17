@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# Smoke-test the debug APK on a running emulator: install, launch, and fail
-# (printing the crash buffer) if the app crashes or isn't alive shortly after.
-# Invoked as a single line from the emulator-runner step, which executes its
-# `script:` input line by line — so all multi-line logic must live here.
+# Smoke-test the built APK (debug on PRs, release on main) on a running
+# emulator: install, launch, and fail (printing the crash buffer) if the app
+# crashes or isn't alive shortly after. Invoked as a single line from the
+# emulator-runner step, which executes its `script:` input line by line — so
+# all multi-line logic must live here.
 set -uo pipefail
 
 PKG=eu.palaio.rosvizrs
 ACT=android.app.NativeActivity
-APK="${GITHUB_WORKSPACE:-.}/ros-viz-rs-debug.apk"
+APK="${GITHUB_WORKSPACE:-.}/ros-viz-rs.apk"
 
 echo "Installing $APK"
 adb install -r "$APK"
