@@ -215,6 +215,61 @@ jobs:
           cp target/release/ros-viz-rs.exe "ros-viz-rs-$version-windows-x86_64.exe"
           gh release upload "$TAG" "ros-viz-rs-$version-windows-x86_64.exe" --clobber
 
+  android-apk:
+    needs: [tag, github-release]
+    if: needs.tag.outputs.created == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install SDK platform and build-tools
+        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+      - name: Set up Android NDK
+        id: ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27c
+          add-to-path: false
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+      - name: Build native libraries (arm64 + x86_64, rosbridge) into jniLibs
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          cargo install cargo-ndk --locked
+          cargo ndk -t arm64-v8a -t x86_64 -o android/app/src/main/jniLibs \
+            build --release --lib --no-default-features --features rosbridge
+          # libc++_shared.so is not provided to apps by Android; bundle it per
+          # ABI or dlopen of libros_viz_rs.so fails (see android-apk.yml).
+          sysroot="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib"
+          cp "$sysroot/aarch64-linux-android/libc++_shared.so" android/app/src/main/jniLibs/arm64-v8a/
+          cp "$sysroot/x86_64-linux-android/libc++_shared.so"  android/app/src/main/jniLibs/x86_64/
+      - name: Assemble release APK (debug-signed, see android/app/build.gradle)
+        working-directory: android
+        run: gradle assembleRelease --no-daemon
+      - name: Upload APK to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.tag.outputs.tag }}
+        run: |
+          apk=$(find android/app/build/outputs/apk/release -name '*.apk' | head -1)
+          test -n "$apk" || { echo "no APK produced"; exit 1; }
+          cp "$apk" "ros-viz-rs-${TAG#v}-android.apk"
+          gh release upload "$TAG" "ros-viz-rs-${TAG#v}-android.apk" --clobber
+
   npm:
     needs: tag
     if: needs.tag.outputs.created == 'true'
