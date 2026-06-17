@@ -6,6 +6,8 @@
 
     <application
         android:label="ros-viz-rs"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:allowBackup="false">
 
         <!-- The framework's NativeActivity (no games-activity AAR): it keeps
