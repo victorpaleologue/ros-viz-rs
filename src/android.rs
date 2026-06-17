@@ -39,11 +39,15 @@ pub fn main() {
 /// behind the status or navigation bars.
 ///
 /// `NativeActivity` lays its surface out edge-to-edge under the system bars,
-/// so the egui top bar collided with the status bar. The android-activity glue
-/// reports the inset-aware content rectangle (in physical pixels) via
-/// [`AndroidApp::content_rect`](android_activity::AndroidApp::content_rect);
-/// we turn that into empty egui spacer panels along each edge. Registered
-/// before the other egui panels so it claims the outermost space.
+/// so the egui top bar collided with the status bar. Bevy has no portable
+/// safe-area API yet (it is blocked on winit's unreleased `Window::safe_area`,
+/// whose Android implementation is still unmerged — see
+/// `docs/wiki/DesignDecisions.md` → *Android windowing & safe-area insets*), so
+/// we read the inset-aware content rectangle (physical pixels) ourselves via
+/// [`AndroidApp::content_rect`](android_activity::AndroidApp::content_rect) —
+/// the same source the future upstream API will use — and turn it into empty
+/// egui spacer panels along each edge. Registered before the other egui panels
+/// so it claims the outermost space.
 pub fn apply_safe_area_insets(
     mut contexts: EguiContexts,
     windows: Query<&Window, With<PrimaryWindow>>,
