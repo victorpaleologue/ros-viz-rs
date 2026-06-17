@@ -17,7 +17,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 use bevy::prelude::*;
-use bevy_egui::EguiPlugin;
+use bevy_egui::{EguiGlobalSettings, EguiPlugin, PrimaryEguiContext};
 #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 use tracing_subscriber::EnvFilter;
 
@@ -114,6 +114,14 @@ pub fn build_app(options: &Options) -> App {
         #[cfg(target_os = "android")]
         app.insert_resource(bevy::winit::WinitSettings::mobile());
         app.add_plugins(EguiPlugin::default());
+        // bevy_egui renders the UI through a camera carrying its primary
+        // context. Its auto-creation attaches that context to a context entity
+        // without a render graph, so egui drew nothing (no panels on any
+        // platform). Disable the auto-creation and instead tag our own
+        // `Camera3d` (which has a render graph) with `PrimaryEguiContext`.
+        app.world_mut()
+            .resource_mut::<EguiGlobalSettings>()
+            .auto_create_primary_context = false;
         app.add_plugins(crate::camera::OrbitCameraPlugin);
         app.add_plugins(TopicsTreePlugin {
             panel_mode: TopicsPanelMode::Side,
@@ -125,7 +133,8 @@ pub fn build_app(options: &Options) -> App {
         #[cfg(target_os = "android")]
         app.add_systems(Update, android_back_exits);
         app.add_systems(Startup, |mut commands: Commands| {
-            spawn_viewing_rig(&mut commands);
+            let camera = spawn_viewing_rig(&mut commands);
+            commands.entity(camera).insert(PrimaryEguiContext);
         });
     }
 
