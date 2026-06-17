@@ -117,44 +117,59 @@ pub struct RosbridgeSession {
     topics_poll: Timer,
 }
 
-/// Connects to a rosbridge server and mirrors its topics into the ECS.
-pub struct RosbridgePlugin {
-    /// WebSocket URL, e.g. `ws://localhost:9090`.
-    pub url: String,
+/// Register the rosbridge systems. They are gated on the [`RosbridgeSession`]
+/// resource, so they only run while connected; the connection itself is
+/// started and stopped at runtime via [`connect`] / [`disconnect`] (driven by
+/// the connection UI), rather than at app-build time.
+pub fn register_systems(app: &mut App) {
+    if !app.world().contains_resource::<MessageRegistry>() {
+        app.init_resource::<MessageRegistry>();
+    }
+    app.add_systems(
+        Update,
+        (
+            pump_socket,
+            manage_topic_io,
+            poll_subscription_values,
+            handle_publish_requests,
+            feed_robot_from_topics,
+        )
+            .chain()
+            .run_if(resource_exists::<RosbridgeSession>),
+    );
 }
 
-impl Plugin for RosbridgePlugin {
-    fn build(&self, app: &mut App) {
-        let (sender, receiver) = ewebsock::connect(&self.url, ewebsock::Options::default())
-            .unwrap_or_else(|e| panic!("rosbridge: cannot start connection to {}: {e}", self.url));
-        tracing::info!("rosbridge: connecting to {}", self.url);
-        let (outbox_tx, outbox_rx) = mpsc::channel();
-        app.insert_non_send_resource(RosbridgeIo {
-            sender,
-            receiver,
-            outbox_rx,
-        });
-        app.insert_resource(RosbridgeSession {
-            outbox: Outbox(outbox_tx),
-            inboxes: HashMap::new(),
-            connected: false,
-            topics_poll: Timer::from_seconds(2.0, TimerMode::Repeating),
-        });
-        if !app.world().contains_resource::<MessageRegistry>() {
-            app.init_resource::<MessageRegistry>();
-        }
-        app.add_systems(
-            Update,
-            (
-                pump_socket,
-                manage_topic_io,
-                poll_subscription_values,
-                handle_publish_requests,
-                feed_robot_from_topics,
-            )
-                .chain(),
-        );
-    }
+/// Open a rosbridge WebSocket connection and install its session resources.
+/// Returns an error (rather than panicking) so the UI can surface it.
+pub fn connect(world: &mut World, url: &str) -> Result<(), String> {
+    let (sender, receiver) = ewebsock::connect(url, ewebsock::Options::default())
+        .map_err(|e| format!("rosbridge: cannot connect to {url}: {e}"))?;
+    tracing::info!("rosbridge: connecting to {url}");
+    let (outbox_tx, outbox_rx) = mpsc::channel();
+    world.insert_non_send_resource(RosbridgeIo {
+        sender,
+        receiver,
+        outbox_rx,
+    });
+    world.insert_resource(RosbridgeSession {
+        outbox: Outbox(outbox_tx),
+        inboxes: HashMap::new(),
+        connected: false,
+        topics_poll: Timer::from_seconds(2.0, TimerMode::Repeating),
+    });
+    Ok(())
+}
+
+/// Tear down the rosbridge connection, dropping the socket. Safe to call when
+/// not connected.
+pub fn disconnect(world: &mut World) {
+    world.remove_resource::<RosbridgeSession>();
+    world.remove_non_send_resource::<RosbridgeIo>();
+}
+
+/// True once the WebSocket handshake has completed.
+pub fn is_connected(session: &RosbridgeSession) -> bool {
+    session.connected
 }
 
 /// Drain WebSocket events: connection state, topic-list responses, and

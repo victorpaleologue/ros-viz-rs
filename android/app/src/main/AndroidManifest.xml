@@ -8,13 +8,18 @@
         android:label="ros-viz-rs"
         android:allowBackup="false">
 
-        <!-- GameActivity from the games-activity AAR; android.app.lib_name
-             must match the Rust cdylib (libros_viz_rs.so -> "ros_viz_rs"). -->
+        <!-- The framework's NativeActivity (no games-activity AAR): it keeps
+             the system status/navigation bars and lays the surface out within
+             their insets. android.app.lib_name must match the Rust cdylib
+             (libros_viz_rs.so -> "ros_viz_rs"); the native-activity backend of
+             android-activity exports its ANativeActivity_onCreate entry point.
+             A plain DeviceDefault NoActionBar theme preserves the system chrome
+             (no app title bar, no fullscreen). -->
         <activity
-            android:name="com.google.androidgamesdk.GameActivity"
+            android:name="android.app.NativeActivity"
             android:exported="true"
             android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|density|uiMode"
-            android:theme="@style/Theme.AppCompat.NoActionBar">
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
             <meta-data
                 android:name="android.app.lib_name"
                 android:value="ros_viz_rs" />

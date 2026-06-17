@@ -61,6 +61,60 @@ the pieces fit; this file is the rationale log.
   Selected by a real `requestAdapter()` probe, so adapterless browsers fall
   back instead of panicking.
 
+## Android windowing & safe-area insets
+
+- **Standalone `NativeActivity`, not GameActivity or an embedded view.** The
+  Android build *is* the activity: Bevy/winit own the `NativeActivity` and the
+  event loop (the `#[bevy_main]` entry point forwards the `AndroidApp` into
+  `bevy_winit`). We deliberately build the `android-native-activity` backend,
+  not Bevy's default GameActivity (see `src/android.rs`, `Cargo.toml`).
+
+- **Bevy has no safe-area / insets API — this is an upstream limitation, not a
+  config we missed.** `NativeActivity` lays its surface out edge-to-edge under
+  the status/navigation bars, so the egui UI collided with the status bar. A
+  portable fix does not exist yet:
+  - [`bevy#23003`](https://github.com/bevyengine/bevy/issues/23003) (a built-in
+    `SafeAreaInsets`) is **open and `S-Blocked`**.
+  - It's blocked on winit's `Window::safe_area`
+    ([`winit#3890`](https://github.com/rust-windowing/winit/pull/3890)), which
+    is only in the **unreleased winit 0.31**, and whose **Android
+    implementation is still an unmerged PR**
+    ([`winit#4506`](https://github.com/rust-windowing/winit/pull/4506)).
+  - Bevy 0.18 is still on **winit 0.30**, so even the primitive isn't in our
+    tree.
+
+  **Interim solution (`src/android.rs::apply_safe_area_insets`):** read the
+  inset-aware content rectangle ourselves via
+  `AndroidApp::content_rect()` and reserve each edge with empty egui spacer
+  panels, registered before the connection bar and topics panel. This is
+  *exactly* the data source `winit#4506` turns into `Window::safe_area`, so it
+  is the sanctioned interim approach — migrating later is a swap to the upstream
+  API, not a rewrite. **Ruling: keep the spacers; only add a JNI `WindowInsets`
+  read if a device reports a full-screen content rect; adopt `safe_area` once
+  Bevy upgrades to winit 0.31.**
+
+- **Why not GameActivity.** Its `SurfaceView` does not honor
+  `setDecorFitsSystemWindows`, so the system bars overlay content anyway —
+  reported specifically with egui
+  ([`android-activity#96`](https://github.com/rust-mobile/android-activity/issues/96)).
+  It wouldn't fix insets and costs the games-activity AAR, so NativeActivity
+  stays.
+
+- **Why not embed in a "normal" Activity / Jetpack Compose.** Hosting the
+  render surface in a regular Activity (or Compose `AndroidExternalSurface`)
+  *is* the clean Android idiom — you get real `WindowInsets`,
+  `enableEdgeToEdge`, IME handling for free. But Bevy/winit insist on **owning**
+  the Activity, and Bevy has **no first-party API to render into an
+  externally-owned surface** ([discussion
+  `#10900`](https://github.com/bevyengine/bevy/discussions/10900)). The only
+  proven path bypasses `WinitPlugin` entirely
+  ([`jinleili/bevy-in-app`](https://github.com/jinleili/bevy-in-app), which
+  supports Bevy 0.18) and pulls in a full Gradle/Kotlin project plus manual
+  surface, lifecycle, and input plumbing — losing the single `cargo-ndk` build.
+  **Ruling: deferred. It does not fix insets any better than the spacers for a
+  standalone app; reconsider only if shipping ros-viz-rs as an embedded
+  component inside a larger Android app becomes a goal.**
+
 ## Licensing
 
 - MIT, free project. Never vendor incompatible assets: NAO meshes (CC

@@ -1,84 +1,37 @@
-//! The ros-viz-rs application: connect to ROS 2, receive the robot
+//! The ros-viz-rs application: connect to a data source, receive the robot
 //! description and joint states, and render the robot live.
 //!
 //! Two modes share the same systems:
 //!
-//! - **Windowed** (default): a Bevy window with the 3D view and an egui
-//!   topics panel.
+//! - **Windowed** (default): a Bevy window with the 3D view, a connection
+//!   panel and an egui topics panel.
 //! - **Snapshot** (`--snapshot-to <PATH>`): completely windowless; waits for
 //!   `/robot_description`, renders one frame offscreen with a real GPU and
 //!   writes it to disk — handy for headless checks of a live system.
+//!
+//! The data source (demo / rosbridge / DDS) is chosen at startup from
+//! [`Options`] and can be switched at runtime — see [`crate::connection`].
 
-#[cfg(feature = "ros2")]
-use std::sync::Arc;
 use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 
 use bevy::prelude::*;
-use bevy_egui::EguiPlugin;
-#[cfg(feature = "ros2")]
-use ros2_client::ros2::{
-    Duration as RosDuration, QosPolicyBuilder,
-    policy::{Durability, History, Reliability},
-};
+use bevy_egui::{EguiGlobalSettings, EguiPlugin, PrimaryEguiContext};
 #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 use tracing_subscriber::EnvFilter;
 
+use crate::connection::{ConnectionPlugin, initial_mode};
 use crate::options::Options;
-#[cfg(feature = "ros2")]
-use crate::robot::RobotModel;
-#[cfg(any(feature = "ros2", feature = "rosbridge", feature = "zenoh"))]
 use crate::robot::mesh::MeshResolver;
-#[cfg(feature = "ros2")]
-use crate::ros_msgs;
-#[cfg(feature = "ros2")]
-use crate::ros_plugin::{RosPlugin, RosSession};
-// `JointPositions` is fed in app.rs only under DDS; the headless-build test
-// (always compiled) also asserts on it.
-#[cfg(any(feature = "ros2", test))]
+#[cfg(test)]
 use crate::scene::JointPositions;
-// `PendingRobot` + `spawn_robot` back `spawn_pending_robot`, used by every
-// streaming transport (rosbridge, zenoh) and the always-compiled test.
-#[cfg(any(feature = "ros2", feature = "rosbridge", feature = "zenoh", test))]
-use crate::scene::PendingRobot;
-#[cfg(any(feature = "ros2", feature = "rosbridge", feature = "zenoh"))]
-use crate::scene::spawn_robot;
-use crate::scene::{RobotHandle, RobotScenePlugin, spawn_viewing_rig};
+use crate::scene::{
+    MeshBlobs, PendingRobot, RobotHandle, RobotScenePlugin, spawn_robot, spawn_viewing_rig,
+};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::snapshot::{self, SnapshotPlugin};
-#[cfg(feature = "ros2")]
-use crate::topics_io::{TopicIOPlugin, setup_typed_subscription};
 use crate::topics_view::{TopicsPanelMode, TopicsTreePlugin};
-
-/// Typed subscriptions for `/robot_description` and `/joint_states`.
-///
-/// Created lazily once [`RosSession`] is available. Receivers are wrapped in
-/// [`std::sync::Mutex`] because subscriptions are not `Sync`, which Bevy
-/// resources require.
-#[cfg(feature = "ros2")]
-#[derive(Resource)]
-struct AppSubscriptions {
-    robot_description: std::sync::Mutex<ros2_client::Subscription<ros_msgs::String>>,
-    joint_states: std::sync::Mutex<ros2_client::Subscription<ros_msgs::JointState>>,
-}
-
-/// Warns once when no description shows up within a grace period.
-#[cfg_attr(not(feature = "ros2"), allow(dead_code))]
-#[derive(Resource)]
-struct UrdfWaitTimer {
-    timer: Timer,
-    warned: bool,
-}
-
-impl Default for UrdfWaitTimer {
-    fn default() -> Self {
-        Self {
-            timer: Timer::new(Duration::from_secs(3), TimerMode::Once),
-            warned: false,
-        }
-    }
-}
 
 /// Initialize tracing and run the app in the mode selected by `options`.
 pub fn run(options: Options) -> anyhow::Result<()> {
@@ -99,7 +52,6 @@ pub fn run(options: Options) -> anyhow::Result<()> {
 pub fn build_app(options: &Options) -> App {
     let mut app = App::new();
     app.insert_resource(options.clone());
-    app.init_resource::<UrdfWaitTimer>();
 
     #[cfg(target_arch = "wasm32")]
     let windowed = true;
@@ -148,14 +100,11 @@ pub fn build_app(options: &Options) -> App {
             window.fit_canvas_to_parent = true;
             window.prevent_default_event_handling = false;
         }
-        // On Android the activity owns the surface: go borderless fullscreen.
-        #[cfg(target_os = "android")]
-        {
-            window.mode = bevy::window::WindowMode::BorderlessFullscreen(
-                bevy::window::MonitorSelection::Primary,
-            );
-            window.resizable = false;
-        }
+        // On Android, stay a normal windowed activity: the system status and
+        // navigation bars are kept, and the surface is laid out within their
+        // insets, so the egui top bar sits below the status bar instead of
+        // behind it. (Borderless fullscreen pushed the surface edge-to-edge
+        // under the bars, hiding the connection bar.)
         app.add_plugins(DefaultPlugins.set(bevy::window::WindowPlugin {
             primary_window: Some(window),
             ..Default::default()
@@ -165,12 +114,36 @@ pub fn build_app(options: &Options) -> App {
         #[cfg(target_os = "android")]
         app.insert_resource(bevy::winit::WinitSettings::mobile());
         app.add_plugins(EguiPlugin::default());
+        // bevy_egui renders the UI through a camera carrying its primary
+        // context. Its auto-creation attaches that context to a context entity
+        // without a render graph, so egui drew nothing (no panels on any
+        // platform). Disable the auto-creation and instead tag our own
+        // `Camera3d` (which has a render graph) with `PrimaryEguiContext`.
+        app.world_mut()
+            .resource_mut::<EguiGlobalSettings>()
+            .auto_create_primary_context = false;
         app.add_plugins(crate::camera::OrbitCameraPlugin);
         app.add_plugins(TopicsTreePlugin {
             panel_mode: TopicsPanelMode::Side,
         });
+        // The runtime connection panel (switch demo / rosbridge / DDS).
+        crate::connection_ui::register(&mut app, options);
+        // On Android, the only way out of the app is the Back button; wire it
+        // to a clean exit (it is otherwise ignored — see `android_back_exits`).
+        #[cfg(target_os = "android")]
+        app.add_systems(Update, android_back_exits);
+        // Reserve the system-bar / cutout areas before the other egui panels
+        // claim space, so nothing renders behind the status / nav bars.
+        #[cfg(target_os = "android")]
+        app.add_systems(
+            bevy_egui::EguiPrimaryContextPass,
+            crate::android::apply_safe_area_insets
+                .before(crate::connection_ui::ConnectionPanelSet)
+                .before(crate::topics_view::topics_tree_ui_system),
+        );
         app.add_systems(Startup, |mut commands: Commands| {
-            spawn_viewing_rig(&mut commands);
+            let camera = spawn_viewing_rig(&mut commands);
+            commands.entity(camera).insert(PrimaryEguiContext);
         });
     }
 
@@ -179,18 +152,8 @@ pub fn build_app(options: &Options) -> App {
     // A spinning indicator while we wait for a robot; despawns on arrival.
     app.add_plugins(crate::loading::LoadingIndicatorPlugin);
 
-    if options.demo {
-        app.add_plugins(crate::demo::DemoPlugin);
-        return app;
-    }
-
-    #[cfg(feature = "rosbridge")]
-    if let Some(url) = options.rosbridge.clone() {
-        app.add_plugins(crate::rosbridge::RosbridgePlugin { url });
-        app.add_systems(Update, spawn_pending_robot);
-        return app;
-    }
-
+    // Zenoh is a build-time-only transport (chosen via --zenoh); it predates
+    // the runtime connection switcher and stays a startup path for now.
     #[cfg(feature = "zenoh")]
     if let Some(endpoint) = options.zenoh.clone() {
         app.add_plugins(crate::zenoh::ZenohPlugin {
@@ -200,29 +163,32 @@ pub fn build_app(options: &Options) -> App {
         return app;
     }
 
-    #[cfg(feature = "ros2")]
-    match RosPlugin::new(options.domain, "ros_viz_rs") {
-        Ok(ros) => {
-            app.add_plugins((ros, TopicIOPlugin));
-            app.add_systems(
-                Update,
-                (
-                    setup_app_subscriptions,
-                    receive_robot_description,
-                    receive_joint_states,
-                    spawn_pending_robot,
-                )
-                    .chain(),
-            );
-        }
-        Err(e) => {
-            tracing::error!("ROS connection unavailable: {e}");
-        }
-    }
-    #[cfg(not(feature = "ros2"))]
-    tracing::warn!("built without the ros2 feature: no DDS connection");
+    // Everything else (demo / rosbridge / DDS) is managed at runtime.
+    app.add_plugins(ConnectionPlugin {
+        initial: initial_mode(options),
+    });
 
     app
+}
+
+/// Exit the app when the Android Back button is pressed.
+///
+/// winit 0.30 delivers Android's `BACK` keycode only as the logical
+/// [`Key::BrowserBack`] — it has no physical [`KeyCode`] — so we match on the
+/// logical key rather than `ButtonInput<KeyCode>`, which would never fire.
+/// Without this the button is swallowed and the user has no way to leave.
+#[cfg(target_os = "android")]
+fn android_back_exits(
+    mut keys: MessageReader<bevy::input::keyboard::KeyboardInput>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    use bevy::input::ButtonState;
+    use bevy::input::keyboard::Key;
+    for key in keys.read() {
+        if key.state == ButtonState::Pressed && key.logical_key == Key::BrowserBack {
+            exit.write(AppExit::Success);
+        }
+    }
 }
 
 /// Drive a snapshot-mode app until a robot is rendered, then write the PNG.
@@ -259,133 +225,17 @@ fn run_headless_snapshot(
     Ok(())
 }
 
-/// Lazily create the typed subscriptions once [`RosSession`] exists.
-#[cfg(feature = "ros2")]
-fn setup_app_subscriptions(world: &mut World) {
-    if world.get_resource::<AppSubscriptions>().is_some()
-        || world.get_resource::<RosSession>().is_none()
-    {
-        return;
-    }
-    let session = world.resource::<RosSession>().clone();
-
-    // robot_description is latched: publishers keep the last message for
-    // late joiners, which requires TransientLocal durability on our side.
-    let latched = QosPolicyBuilder::new()
-        .durability(Durability::TransientLocal)
-        .history(History::KeepLast { depth: 1 })
-        .reliability(Reliability::Reliable {
-            max_blocking_time: RosDuration::from_secs(1),
-        })
-        .build();
-
-    let robot_description = match setup_typed_subscription::<ros_msgs::String>(
-        &session.node,
-        "/robot_description",
-        Some(&latched),
-    ) {
-        Ok(sub) => sub,
-        Err(e) => {
-            tracing::warn!("Failed to subscribe to /robot_description: {e}");
-            return;
-        }
-    };
-    let joint_states = match setup_typed_subscription::<ros_msgs::JointState>(
-        &session.node,
-        "/joint_states",
-        None,
-    ) {
-        Ok(sub) => sub,
-        Err(e) => {
-            tracing::warn!("Failed to subscribe to /joint_states: {e}");
-            return;
-        }
-    };
-
-    world.insert_resource(AppSubscriptions {
-        robot_description: std::sync::Mutex::new(robot_description),
-        joint_states: std::sync::Mutex::new(joint_states),
-    });
-    tracing::info!("Subscribed to /robot_description and /joint_states");
-}
-
-/// Receive the URDF, parse it into a [`RobotModel`].
-#[cfg(feature = "ros2")]
-fn receive_robot_description(
-    mut pending: ResMut<PendingRobot>,
-    robots: Query<&RobotHandle>,
-    subs: Option<Res<AppSubscriptions>>,
-    options: Res<Options>,
-    mut wait: ResMut<UrdfWaitTimer>,
-    time: Res<Time>,
-) {
-    if pending.0.is_some() || !robots.is_empty() {
-        return;
-    }
-    wait.timer.tick(time.delta());
-
-    let Some(subs) = subs.as_ref() else {
-        return;
-    };
-    let sub = subs
-        .robot_description
-        .lock()
-        .unwrap_or_else(|p| p.into_inner());
-    let mut latest = None;
-    while let Ok(Some((msg, _))) = sub.take() {
-        latest = Some(msg.data);
-    }
-    if let Some(xml) = latest {
-        match RobotModel::from_urdf_str(&xml) {
-            Ok(model) => {
-                tracing::info!(
-                    "Received robot '{}': {} links, {} joints",
-                    model.name(),
-                    model.urdf.links.len(),
-                    model.urdf.joints.len()
-                );
-                pending.0 = Some(Arc::new(model));
-            }
-            Err(err) => tracing::error!(?err, "Failed to parse /robot_description"),
-        }
-    } else if wait.timer.is_finished() && !wait.warned {
-        wait.warned = true;
-        tracing::warn!(
-            "No /robot_description after {}s on domain {}. Common publishers: \
-             robot_state_publisher (latched topic).",
-            wait.timer.duration().as_secs(),
-            options.domain,
-        );
-    }
-}
-
-/// Feed `/joint_states` into the scene's [`JointPositions`].
-#[cfg(feature = "ros2")]
-fn receive_joint_states(
-    mut joint_positions: ResMut<JointPositions>,
-    subs: Option<Res<AppSubscriptions>>,
-) {
-    let Some(subs) = subs.as_ref() else { return };
-    let sub = subs.joint_states.lock().unwrap_or_else(|p| p.into_inner());
-    let mut latest = None;
-    while let Ok(Some((msg, _))) = sub.take() {
-        latest = Some(msg);
-    }
-    if let Some(msg) = latest {
-        for (name, position) in msg.name.iter().zip(msg.position.iter()) {
-            joint_positions.positions.insert(name.clone(), *position);
-        }
-    }
-}
-
-/// Spawn the robot scene once a model has been received.
-#[cfg(any(feature = "ros2", feature = "rosbridge", feature = "zenoh"))]
-fn spawn_pending_robot(
+/// Spawn the robot scene once a model has been received into [`PendingRobot`].
+///
+/// Shared by every streaming transport (rosbridge, DDS, zenoh) and the
+/// connection manager; a no-op when nothing is pending or a robot is already
+/// present.
+pub fn spawn_pending_robot(
     mut commands: Commands,
     mut pending: ResMut<PendingRobot>,
     robots: Query<&RobotHandle>,
     options: Res<Options>,
-    blobs: Res<crate::scene::MeshBlobs>,
+    blobs: Res<MeshBlobs>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {

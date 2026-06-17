@@ -1,10 +1,11 @@
 //! Self-contained demo: an embedded NAO waving hello, no transport at all.
 //!
-//! [`DemoPlugin`] spawns the bundled NAO description and drives
-//! [`JointPositions`] from a [`JointScript`] every frame. It works in any
-//! app that has [`RobotScenePlugin`](crate::scene::RobotScenePlugin):
-//! the native viewer (`--demo`), headless snapshots, and the web build —
-//! which is exactly why it knows nothing about ROS.
+//! [`register_systems`] + [`connect`] spawn the bundled NAO description and
+//! drive [`JointPositions`] from a [`JointScript`] every frame (gated on the
+//! [`DemoActive`] marker). It works in any app that has
+//! [`RobotScenePlugin`](crate::scene::RobotScenePlugin): the native viewer
+//! (`--demo`), headless snapshots, and the web build — which is exactly why it
+//! knows nothing about ROS.
 
 use std::sync::{Arc, Mutex};
 
@@ -83,20 +84,31 @@ pub mod scripts {
 #[derive(Resource)]
 pub struct DemoScript(pub Mutex<JointScript>);
 
-/// Spawns the embedded NAO and animates it with [`scripts::nao_wave`]
-/// (or whatever [`DemoScript`] is inserted before this plugin).
-pub struct DemoPlugin;
+/// Marks the demo as the active data source. Inserted by [`connect`] and
+/// removed by [`disconnect`]; the demo systems are gated on it so the demo
+/// only runs (and respawns) while selected.
+#[derive(Resource, Default)]
+pub struct DemoActive;
 
-impl Plugin for DemoPlugin {
-    fn build(&self, app: &mut App) {
-        if !app.world().contains_resource::<DemoScript>() {
-            app.insert_resource(DemoScript(Mutex::new(scripts::nao_wave())));
-        }
-        // On Update (not just Startup) and guarded on "no robot present", so
-        // it respawns after a mesh upload despawns the robot (see
-        // `drain_uploaded_meshes`).
-        app.add_systems(Update, (spawn_demo_robot, animate_demo));
-    }
+/// Register the demo systems, gated on [`DemoActive`]. On Update (not just
+/// Startup) and guarded on "no robot present", so the demo respawns after a
+/// mesh upload despawns the robot (see `drain_uploaded_meshes`).
+pub fn register_systems(app: &mut App) {
+    app.add_systems(
+        Update,
+        (spawn_demo_robot, animate_demo).run_if(resource_exists::<DemoActive>),
+    );
+}
+
+/// Select the demo as the data source.
+pub fn connect(world: &mut World) {
+    world.insert_resource(DemoActive);
+}
+
+/// Deselect the demo (the robot itself is despawned by the connection
+/// teardown). Safe to call when the demo isn't active.
+pub fn disconnect(world: &mut World) {
+    world.remove_resource::<DemoActive>();
 }
 
 fn spawn_demo_robot(
@@ -138,9 +150,11 @@ fn spawn_demo_robot(
 
 fn animate_demo(
     time: Res<Time>,
-    script: Res<DemoScript>,
+    script: Option<Res<DemoScript>>,
     mut joint_positions: ResMut<JointPositions>,
 ) {
+    // No script until the demo robot has spawned (which inserts one).
+    let Some(script) = script else { return };
     let mut script = script.0.lock().unwrap_or_else(|p| p.into_inner());
     for (name, position) in script(time.elapsed_secs_f64()) {
         joint_positions.positions.insert(name, position);
@@ -191,7 +205,8 @@ mod tests {
         app.init_asset::<Mesh>();
         app.init_asset::<StandardMaterial>();
         app.add_plugins(crate::scene::RobotScenePlugin);
-        app.add_plugins(DemoPlugin);
+        register_systems(&mut app);
+        connect(app.world_mut());
 
         let count = |app: &mut App| {
             app.world_mut()
@@ -235,7 +250,8 @@ mod tests {
         app.init_asset::<Mesh>();
         app.init_asset::<StandardMaterial>();
         app.add_plugins(crate::scene::RobotScenePlugin);
-        app.add_plugins(DemoPlugin);
+        register_systems(&mut app);
+        connect(app.world_mut());
 
         app.update();
         // Advance time a few frames so the script runs with t > 0.

@@ -475,8 +475,8 @@ fn frame_camera_on_new_robot(
 
 /// Spawn the standard viewing rig: an auto-framing camera plus
 /// [`spawn_lights`], shared by the app and examples.
-pub fn spawn_viewing_rig(commands: &mut Commands) {
-    let _camera = commands
+pub fn spawn_viewing_rig(commands: &mut Commands) -> Entity {
+    let camera = commands
         .spawn((
             Camera3d::default(),
             AutoFrameCamera,
@@ -486,8 +486,9 @@ pub fn spawn_viewing_rig(commands: &mut Commands) {
         .id();
     // MSAA is unreliable on many Android GPUs (matches Bevy's mobile example).
     #[cfg(target_os = "android")]
-    commands.entity(_camera).insert(Msaa::Off);
+    commands.entity(camera).insert(Msaa::Off);
     spawn_lights(commands);
+    camera
 }
 
 /// Spawn the standard lighting used across viewer, snapshots and tests:

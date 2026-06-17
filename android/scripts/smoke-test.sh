@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# Smoke-test the debug APK on a running emulator: install, launch, and fail
-# (printing the crash buffer) if the app crashes or isn't alive shortly after.
-# Invoked as a single line from the emulator-runner step, which executes its
-# `script:` input line by line — so all multi-line logic must live here.
+# Smoke-test the built APK (debug on PRs, release on main) on a running
+# emulator: install, launch, and fail (printing the crash buffer) if the app
+# crashes or isn't alive shortly after. Invoked as a single line from the
+# emulator-runner step, which executes its `script:` input line by line — so
+# all multi-line logic must live here.
 set -uo pipefail
 
 PKG=eu.palaio.rosvizrs
-ACT=com.google.androidgamesdk.GameActivity
-APK="${GITHUB_WORKSPACE:-.}/ros-viz-rs-debug.apk"
+ACT=android.app.NativeActivity
+APK="${GITHUB_WORKSPACE:-.}/ros-viz-rs.apk"
 
 echo "Installing $APK"
 adb install -r "$APK"
@@ -30,6 +31,43 @@ for _ in $(seq 1 20); do
 done
 
 pid="$(adb shell pidof "$PKG" | tr -d '\r')"
+
+# Grab a framebuffer screenshot so the rendered UI (the egui connection bar,
+# which can't be seen on a headless CI run otherwise) is reviewable as an
+# artifact. The activity gets stopped during the headless watch above (winit
+# logs onStop/onDestroy), so bring it back to the foreground and let it render
+# a few frames first, or we'd just photograph the launcher. Best-effort: never
+# fail the smoke test over a missing screenshot.
+adb shell am start -n "$PKG/$ACT" >/dev/null 2>&1 || true
+shot="${GITHUB_WORKSPACE:-.}/app-screenshot.png"
+best=0
+for _ in $(seq 1 4); do
+  # A tap generates input so the reactive (battery-saving) renderer draws a
+  # fresh frame; the headless emulator tears the activity down a few seconds
+  # after launch, so grab quickly and keep the largest (least-blank) frame.
+  adb shell input tap 160 320 >/dev/null 2>&1 || true
+  sleep 1
+  tmp="$(mktemp)"
+  if adb exec-out screencap -p > "$tmp" 2>/dev/null; then
+    sz="$(wc -c < "$tmp")"
+    if [ "$sz" -gt "$best" ]; then best="$sz"; mv "$tmp" "$shot"; else rm -f "$tmp"; fi
+  else
+    rm -f "$tmp"
+  fi
+done
+if [ -s "$shot" ]; then
+  echo "Captured screenshot -> $shot ($best bytes)"
+  # Also emit it base64 between markers: CI artifacts live on a storage host
+  # that egress policies often block, but job logs are always fetchable, so
+  # this lets the rendered frame be reviewed straight from the log.
+  echo "----BEGIN_SCREENSHOT_B64----"
+  base64 -w0 "$shot" 2>/dev/null || base64 "$shot"
+  echo
+  echo "----END_SCREENSHOT_B64----"
+else
+  echo "::warning::Could not capture a screenshot"
+  rm -f "$shot"
+fi
 
 echo "==================== CRASH BUFFER ===================="
 adb logcat -d -b crash | tail -n 150

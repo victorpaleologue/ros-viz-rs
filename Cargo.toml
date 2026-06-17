@@ -4,7 +4,7 @@
 # [package.metadata.*] sections below, which pin those back.
 [package]
 name = "ros-viz"
-version = "1.2.0"
+version = "1.3.0"
 edition = "2024"
 # Two bin targets (ros-viz + the ros-viz-rs alias) make a bare `cargo run`
 # ambiguous; pick the canonical one so `cargo run`/`cargo run --release` keep
@@ -78,14 +78,41 @@ webgpu = ["bevy/webgpu"]
 
 [dependencies]
 bevy_egui = "0.39"
+# Bevy must be declared here (not only in a [target.*] table): its derive
+# macros locate the `bevy` crate path via BevyManifest, which scans only
+# [dependencies]/[dev-dependencies]. The feature list is Bevy's `default`
+# (= the 2d ∪ 3d ∪ ui aggregates) expanded by hand with a single omission,
+# `android-game-activity`. That backend is baked into `default_platform`, can't
+# be compiled alongside native-activity, and is replaced on Android by
+# `android-native-activity` in the [target.'cfg(target_os = "android")'] table.
+# On desktop/web the omission is inert (android-activity isn't a dependency
+# there), so those builds are byte-for-byte the previous default.
+bevy = { version = "0.18", default-features = false, features = [
+    # 2d ∪ 3d ∪ ui, minus the `default_platform` aggregate (expanded below):
+    "default_app",
+    "2d_bevy_render",
+    "3d_bevy_render",
+    "ui_api",
+    "ui_bevy_render",
+    "scene",
+    "audio",
+    "picking",
+    # `default_platform`, minus `android-game-activity`:
+    "std",
+    "android_shared_stdcxx",
+    "bevy_gilrs",
+    "bevy_winit",
+    "default_font",
+    "multi_threaded",
+    "webgl2",
+    "x11",
+    "wayland",
+    "sysinfo_plugin",
+] }
 anyhow = "1"
 clap = { version = "4.5", features = ["derive", "env"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
-# The web backend is selected by our own `webgpu` feature (see [features]),
-# so the WebGL2 and WebGPU bundles build from the same source. Plain default
-# features here = WebGL2/native.
-bevy = "0.18"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # serde derives Deserialize for arrays only up to 32 elements; ROS covariance
@@ -113,6 +140,17 @@ zenoh-ext = { version = "1", features = ["unstable"], optional = true }
 cdr = { version = "0.2", optional = true }
 tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
 ron = "0.12.1"
+
+# Android uses the framework's NativeActivity rather than Bevy's default
+# GameActivity (which needs the games-activity AAR and draws edge-to-edge under
+# the system bars). This adds the backend to the base `bevy` dependency above;
+# default-features stays off, so `android-game-activity` is never pulled in and
+# the two backends can't clash.
+[target.'cfg(target_os = "android")'.dependencies]
+bevy = { version = "0.18", default-features = false, features = ["android-native-activity"] }
+# Exposes `ANDROID_APP` (the android-activity `AndroidApp`), used to read the
+# inset-aware content rect so egui panels avoid the system bars.
+bevy_android = "0.18"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"

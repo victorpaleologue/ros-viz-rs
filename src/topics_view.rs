@@ -128,6 +128,11 @@ pub enum TopicsPanelMode {
     Central,
 }
 
+/// Whether the side topics panel is collapsed to a thin strip. Lets the user
+/// reclaim screen space on narrow/portrait displays (e.g. phones).
+#[derive(Resource, Debug, Default, Clone, Copy)]
+pub struct TopicsPanelCollapsed(pub bool);
+
 // ---------------------------------------------------------------------------
 // Plugin
 // ---------------------------------------------------------------------------
@@ -142,6 +147,7 @@ pub struct TopicsTreePlugin {
 impl Plugin for TopicsTreePlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(self.panel_mode);
+        app.init_resource::<TopicsPanelCollapsed>();
         app.init_resource::<MessageRegistry>();
         app.add_systems(EguiPrimaryContextPass, topics_tree_ui_system);
     }
@@ -180,6 +186,7 @@ pub fn topics_tree_ui_system(
     mut commands: Commands,
     mut contexts: EguiContexts,
     panel_mode: Res<TopicsPanelMode>,
+    mut collapsed: ResMut<TopicsPanelCollapsed>,
     registry: Res<MessageRegistry>,
     topics: Query<(Entity, &TopicInfo)>,
     values: Query<&TopicValue>,
@@ -195,9 +202,9 @@ pub fn topics_tree_ui_system(
         return;
     };
 
-    let render_body = |ui: &mut egui::Ui| {
-        ui.heading("Topics");
-        ui.separator();
+    // The scrollable tree (or empty-state) shared by every layout. The header
+    // varies per layout, so it is rendered by each branch below.
+    let mut render_tree = |ui: &mut egui::Ui| {
         if !has_topics {
             render_empty_state(ui);
         } else {
@@ -218,12 +225,39 @@ pub fn topics_tree_ui_system(
 
     match *panel_mode {
         TopicsPanelMode::Central => {
-            egui::CentralPanel::default().show(ctx, render_body);
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.heading("Topics");
+                ui.separator();
+                render_tree(ui);
+            });
+        }
+        TopicsPanelMode::Side if collapsed.0 => {
+            // Collapsed: a thin strip with just an expand button, so the 3D
+            // view gets the full width on narrow/portrait screens.
+            egui::SidePanel::left("topics_panel")
+                .resizable(false)
+                .exact_width(28.0)
+                .show(ctx, |ui| {
+                    if ui.button("⏵").on_hover_text("Show topics").clicked() {
+                        collapsed.0 = false;
+                    }
+                });
         }
         TopicsPanelMode::Side => {
             egui::SidePanel::left("topics_panel")
+                .resizable(true)
                 .default_width(300.0)
-                .show(ctx, render_body);
+                .min_width(160.0)
+                .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        if ui.button("⏴").on_hover_text("Hide topics").clicked() {
+                            collapsed.0 = true;
+                        }
+                        ui.heading("Topics");
+                    });
+                    ui.separator();
+                    render_tree(ui);
+                });
         }
     }
 }

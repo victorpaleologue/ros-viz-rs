@@ -2,76 +2,266 @@
 //!
 //! This module is only compiled when the `ros` feature is enabled.
 //!
-//! The main entry point is [`RosPlugin`], which owns the DDS context, node
-//! and spinner, and registers `populate_topics`: that system drains DDS
-//! discovery events and reconciles them with the set of [`TopicInfo`]
-//! entities in the world.
+//! [`connect`] opens a DDS context + node + spinner as a [`RosSession`]
+//! resource, [`register_systems`] wires up `populate_topics` (which drains DDS
+//! discovery events and reconciles them with the set of [`TopicInfo`] entities)
+//! and the `/robot_description` + `/joint_states` feed, and [`disconnect`]
+//! tears the session down. The systems are gated on the session, so they only
+//! run while connected.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::thread::JoinHandle;
+use std::time::Duration;
 
 use bevy::prelude::*;
 
 use ros2_client::Context;
 use ros2_client::NodeEvent;
+use ros2_client::ros2::{
+    Duration as RosDuration, QosPolicyBuilder,
+    policy::{Durability, History, Reliability},
+};
 use ros2_client::rustdds::DomainParticipantStatusEvent;
 use ros2_client::rustdds::EndpointDescription;
 use ros2_client::rustdds::GUID;
+
+use crate::options::Options;
+use crate::robot::RobotModel;
+use crate::ros_msgs;
+use crate::scene::{JointPositions, PendingRobot, RobotHandle};
+use crate::topics_io::setup_typed_subscription;
 
 // ---------------------------------------------------------------------------
 // Plugin
 // ---------------------------------------------------------------------------
 
-/// Bevy plugin that maintains a ROS context and a node,
-/// and populate the ECS with topics and associated subscribers and publishers.
-pub struct RosPlugin {
-    session: RosSession,
-    _spinner_thread: Option<JoinHandle<()>>,
+/// Build a DDS [`RosSession`] on `domain_id`: a context, a node, and a
+/// detached spinner thread driving the node's background tasks. The spinner
+/// thread exits on its own once the session resource (the sole owner of the
+/// node) is dropped on disconnect.
+fn make_session(domain_id: u16, node_name: &str) -> Result<RosSession, String> {
+    let ctx = Context::with_options(ros2_client::ContextOptions::new().domain_id(domain_id))
+        .map_err(|e| format!("failed to create ROS context: {e:?}"))?;
+    let node_name = ros2_client::NodeName::new("/", node_name)
+        .map_err(|e| format!("invalid node name: {e:?}"))?;
+    let mut node = ctx
+        .new_node(node_name, ros2_client::NodeOptions::new())
+        .map_err(|e| format!("failed to create ROS node: {e:?}"))?;
+
+    let spinner = node
+        .spinner()
+        .map_err(|e| format!("failed to create spinner: {e:?}"))?;
+
+    std::thread::Builder::new()
+        .name("ros_spinner".into())
+        .spawn(move || {
+            if let Err(e) = futures::executor::block_on(spinner.spin()) {
+                tracing::warn!("Spinner exited with error: {e:?}");
+            }
+        })
+        .map_err(|e| format!("failed to spawn spinner thread: {e}"))?;
+
+    let event_receiver = node.status_receiver();
+
+    Ok(RosSession {
+        ctx: Arc::new(Mutex::new(ctx)),
+        node: Arc::new(Mutex::new(node)),
+        event_receiver,
+    })
 }
 
-impl RosPlugin {
-    pub fn new(domain_id: u16, node_name: &str) -> Result<Self, String> {
-        let ctx = Context::with_options(ros2_client::ContextOptions::new().domain_id(domain_id))
-            .map_err(|e| format!("failed to create ROS context: {e:?}"))?;
-        let node_name = ros2_client::NodeName::new("/", node_name)
-            .map_err(|e| format!("invalid node name: {e:?}"))?;
-        let mut node = ctx
-            .new_node(node_name, ros2_client::NodeOptions::new())
-            .map_err(|e| format!("failed to create ROS node: {e:?}"))?;
+/// Register DDS topic discovery (`populate_topics`). Gated on the
+/// [`RosSession`] resource, so it only runs while connected. This is all a
+/// topic browser needs; the viewer additionally calls [`register_robot_feed`].
+pub fn register_systems(app: &mut App) {
+    app.init_resource::<TopicIndex>();
+    app.add_systems(
+        Update,
+        populate_topics.run_if(resource_exists::<RosSession>),
+    );
+}
 
-        let spinner = node
-            .spinner()
-            .map_err(|e| format!("failed to create spinner: {e:?}"))?;
+/// Register the `/robot_description` + `/joint_states` feed (gated on
+/// [`RosSession`]). Kept separate from [`register_systems`] because it needs
+/// [`Options`] in the world — the full viewer has it, a bare topic browser
+/// (the `view_topics` example) does not.
+pub fn register_robot_feed(app: &mut App) {
+    app.init_resource::<UrdfWaitTimer>();
+    app.add_systems(
+        Update,
+        (
+            setup_app_subscriptions,
+            receive_robot_description,
+            receive_joint_states,
+        )
+            .run_if(resource_exists::<RosSession>),
+    );
+}
 
-        let spinner_thread = std::thread::Builder::new()
-            .name("ros_spinner".into())
-            .spawn(move || {
-                if let Err(e) = futures::executor::block_on(spinner.spin()) {
-                    tracing::warn!("Spinner exited with error: {e:?}");
-                }
-            })
-            .map_err(|e| format!("failed to spawn spinner thread: {e}"))?;
+/// Open a DDS session on `domain_id` and install it as a resource, enabling
+/// the gated DDS systems. Returns an error rather than panicking.
+pub fn connect(world: &mut World, domain_id: u16, node_name: &str) -> Result<(), String> {
+    let session = make_session(domain_id, node_name)?;
+    world.insert_resource(session);
+    Ok(())
+}
 
-        let event_receiver = node.status_receiver();
-
-        Ok(Self {
-            session: RosSession {
-                ctx: Arc::new(Mutex::new(ctx)),
-                node: Arc::new(Mutex::new(node)),
-                event_receiver,
-            },
-            _spinner_thread: Some(spinner_thread),
-        })
+/// Tear down the DDS session: dropping [`RosSession`] drops the node (the
+/// spinner thread then exits) and stops the gated systems. Safe to call when
+/// not connected.
+pub fn disconnect(world: &mut World) {
+    world.remove_resource::<RosSession>();
+    world.remove_resource::<AppSubscriptions>();
+    // The wait-timer is per-connection; reset it for the next session.
+    if let Some(mut wait) = world.get_resource_mut::<UrdfWaitTimer>() {
+        *wait = UrdfWaitTimer::default();
     }
 }
 
-impl Plugin for RosPlugin {
-    fn build(&self, app: &mut App) {
-        app.insert_resource(self.session.clone());
-        app.init_resource::<TopicIndex>();
-        app.add_systems(Update, populate_topics);
+// ---------------------------------------------------------------------------
+// Robot feed (/robot_description, /joint_states)
+// ---------------------------------------------------------------------------
+
+/// Typed subscriptions for `/robot_description` and `/joint_states`, created
+/// lazily once a [`RosSession`] exists. Receivers are wrapped in a mutex
+/// because subscriptions are not `Sync`, which Bevy resources require.
+#[derive(Resource)]
+struct AppSubscriptions {
+    robot_description: std::sync::Mutex<ros2_client::Subscription<ros_msgs::String>>,
+    joint_states: std::sync::Mutex<ros2_client::Subscription<ros_msgs::JointState>>,
+}
+
+/// Warns once when no description shows up within a grace period.
+#[derive(Resource)]
+struct UrdfWaitTimer {
+    timer: Timer,
+    warned: bool,
+}
+
+impl Default for UrdfWaitTimer {
+    fn default() -> Self {
+        Self {
+            timer: Timer::new(Duration::from_secs(3), TimerMode::Once),
+            warned: false,
+        }
+    }
+}
+
+/// Lazily create the typed subscriptions once [`RosSession`] exists.
+fn setup_app_subscriptions(world: &mut World) {
+    if world.get_resource::<AppSubscriptions>().is_some()
+        || world.get_resource::<RosSession>().is_none()
+    {
+        return;
+    }
+    let session = world.resource::<RosSession>().clone();
+
+    // robot_description is latched: publishers keep the last message for late
+    // joiners, which requires TransientLocal durability on our side.
+    let latched = QosPolicyBuilder::new()
+        .durability(Durability::TransientLocal)
+        .history(History::KeepLast { depth: 1 })
+        .reliability(Reliability::Reliable {
+            max_blocking_time: RosDuration::from_secs(1),
+        })
+        .build();
+
+    let robot_description = match setup_typed_subscription::<ros_msgs::String>(
+        &session.node,
+        "/robot_description",
+        Some(&latched),
+    ) {
+        Ok(sub) => sub,
+        Err(e) => {
+            tracing::warn!("Failed to subscribe to /robot_description: {e}");
+            return;
+        }
+    };
+    let joint_states = match setup_typed_subscription::<ros_msgs::JointState>(
+        &session.node,
+        "/joint_states",
+        None,
+    ) {
+        Ok(sub) => sub,
+        Err(e) => {
+            tracing::warn!("Failed to subscribe to /joint_states: {e}");
+            return;
+        }
+    };
+
+    world.insert_resource(AppSubscriptions {
+        robot_description: std::sync::Mutex::new(robot_description),
+        joint_states: std::sync::Mutex::new(joint_states),
+    });
+    tracing::info!("Subscribed to /robot_description and /joint_states");
+}
+
+/// Receive the URDF and parse it into a [`RobotModel`] (queued in
+/// [`PendingRobot`] for the shared spawn system).
+fn receive_robot_description(
+    mut pending: ResMut<PendingRobot>,
+    robots: Query<&RobotHandle>,
+    subs: Option<Res<AppSubscriptions>>,
+    options: Res<Options>,
+    mut wait: ResMut<UrdfWaitTimer>,
+    time: Res<Time>,
+) {
+    if pending.0.is_some() || !robots.is_empty() {
+        return;
+    }
+    wait.timer.tick(time.delta());
+
+    let Some(subs) = subs.as_ref() else {
+        return;
+    };
+    let sub = subs
+        .robot_description
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    let mut latest = None;
+    while let Ok(Some((msg, _))) = sub.take() {
+        latest = Some(msg.data);
+    }
+    if let Some(xml) = latest {
+        match RobotModel::from_urdf_str(&xml) {
+            Ok(model) => {
+                tracing::info!(
+                    "Received robot '{}': {} links, {} joints",
+                    model.name(),
+                    model.urdf.links.len(),
+                    model.urdf.joints.len()
+                );
+                pending.0 = Some(Arc::new(model));
+            }
+            Err(err) => tracing::error!(?err, "Failed to parse /robot_description"),
+        }
+    } else if wait.timer.is_finished() && !wait.warned {
+        wait.warned = true;
+        tracing::warn!(
+            "No /robot_description after {}s on domain {}. Common publishers: \
+             robot_state_publisher (latched topic).",
+            wait.timer.duration().as_secs(),
+            options.domain,
+        );
+    }
+}
+
+/// Feed `/joint_states` into the scene's [`JointPositions`].
+fn receive_joint_states(
+    mut joint_positions: ResMut<JointPositions>,
+    subs: Option<Res<AppSubscriptions>>,
+) {
+    let Some(subs) = subs.as_ref() else { return };
+    let sub = subs.joint_states.lock().unwrap_or_else(|p| p.into_inner());
+    let mut latest = None;
+    while let Ok(Some((msg, _))) = sub.take() {
+        latest = Some(msg);
+    }
+    if let Some(msg) = latest {
+        for (name, position) in msg.name.iter().zip(msg.position.iter()) {
+            joint_positions.positions.insert(name.clone(), *position);
+        }
     }
 }
 
@@ -693,8 +883,8 @@ mod tests {
         // -- set up Bevy app --
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
-        let ros_plugin = RosPlugin::new(domain_id, "test_node").expect("create ROS plugin");
-        app.add_plugins(ros_plugin);
+        register_systems(&mut app);
+        connect(app.world_mut(), domain_id, "test_node").expect("open DDS session");
 
         // -- wait for discovery (with timeout) --
         // DDS topic names are raw: "rt/test_pub_topic", "rt/test_sub_topic"
