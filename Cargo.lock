@@ -6204,6 +6204,7 @@ dependencies = [
  "anyhow",
  "async-channel",
  "bevy",
+ "bevy_android",
  "bevy_egui",
  "cdr",
  "chrono",

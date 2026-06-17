@@ -148,6 +148,9 @@ ron = "0.12.1"
 # the two backends can't clash.
 [target.'cfg(target_os = "android")'.dependencies]
 bevy = { version = "0.18", default-features = false, features = ["android-native-activity"] }
+# Exposes `ANDROID_APP` (the android-activity `AndroidApp`), used to read the
+# inset-aware content rect so egui panels avoid the system bars.
+bevy_android = "0.18"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"

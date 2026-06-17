@@ -16,6 +16,8 @@
 //! type a rosbridge URL and switch to a live robot.
 
 use bevy::prelude::*;
+use bevy::window::PrimaryWindow;
+use bevy_egui::{EguiContexts, egui};
 
 use crate::options::Options;
 
@@ -31,4 +33,72 @@ pub fn main() {
     };
     // `run` only returns on app exit.
     let _ = crate::app::run(options);
+}
+
+/// Reserve the system bar / display-cutout areas so egui panels never sit
+/// behind the status or navigation bars.
+///
+/// `NativeActivity` lays its surface out edge-to-edge under the system bars,
+/// so the egui top bar collided with the status bar. The android-activity glue
+/// reports the inset-aware content rectangle (in physical pixels) via
+/// [`AndroidApp::content_rect`](android_activity::AndroidApp::content_rect);
+/// we turn that into empty egui spacer panels along each edge. Registered
+/// before the other egui panels so it claims the outermost space.
+pub fn apply_safe_area_insets(
+    mut contexts: EguiContexts,
+    windows: Query<&Window, With<PrimaryWindow>>,
+) {
+    let Some(android_app) = bevy_android::ANDROID_APP.get() else {
+        return;
+    };
+    let Ok(window) = windows.single() else {
+        return;
+    };
+
+    let rect = android_app.content_rect();
+    let win_w = window.physical_width() as f32;
+    let win_h = window.physical_height() as f32;
+    // Bail on an unreported/degenerate content rect (e.g. before the first
+    // `ContentRectChanged`) so we never reserve bogus space.
+    if win_w <= 0.0 || win_h <= 0.0 || rect.right <= rect.left || rect.bottom <= rect.top {
+        return;
+    }
+
+    // content_rect is physical pixels; egui lays out in logical points.
+    let scale = window.scale_factor().max(1.0);
+    let top = (rect.top as f32 / scale).max(0.0);
+    let bottom = ((win_h - rect.bottom as f32) / scale).max(0.0);
+    let left = (rect.left as f32 / scale).max(0.0);
+    let right = ((win_w - rect.right as f32) / scale).max(0.0);
+
+    let Ok(ctx) = contexts.ctx_mut() else {
+        return;
+    };
+    // Transparent so the 3D view (and the OS bars composited above) show
+    // through the reserved strips.
+    let frame = egui::Frame::NONE;
+    if top > 0.5 {
+        egui::TopBottomPanel::top("safe_area_top")
+            .frame(frame)
+            .exact_height(top)
+            .show(ctx, |_ui| {});
+    }
+    if bottom > 0.5 {
+        egui::TopBottomPanel::bottom("safe_area_bottom")
+            .frame(frame)
+            .exact_height(bottom)
+            .show(ctx, |_ui| {});
+    }
+    if left > 0.5 {
+        egui::SidePanel::left("safe_area_left")
+            .frame(frame)
+            .exact_width(left)
+            .show(ctx, |_ui| {});
+    }
+    if right > 0.5 {
+        egui::SidePanel::right("safe_area_right")
+            .frame(frame)
+            .exact_width(right)
+            .show(ctx, |_ui| {});
+    }
 }

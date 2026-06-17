@@ -34,8 +34,17 @@ pub fn register(app: &mut App, options: &Options) {
     }
     form.domain = options.domain;
     app.insert_resource(form);
-    app.add_systems(EguiPrimaryContextPass, connection_panel);
+    app.add_systems(
+        EguiPrimaryContextPass,
+        connection_panel.in_set(ConnectionPanelSet),
+    );
 }
+
+/// System set for [`connection_panel`], so other egui systems (e.g. the
+/// Android safe-area insets) can order themselves around the connection bar
+/// without referencing the panel's private parameter types.
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct ConnectionPanelSet;
 
 // `form` is only mutated by the rosbridge/DDS widgets; a build with neither
 // transport feature shows just the Demo button and leaves it untouched.

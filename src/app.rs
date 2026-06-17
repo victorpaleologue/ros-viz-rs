@@ -132,6 +132,15 @@ pub fn build_app(options: &Options) -> App {
         // to a clean exit (it is otherwise ignored — see `android_back_exits`).
         #[cfg(target_os = "android")]
         app.add_systems(Update, android_back_exits);
+        // Reserve the system-bar / cutout areas before the other egui panels
+        // claim space, so nothing renders behind the status / nav bars.
+        #[cfg(target_os = "android")]
+        app.add_systems(
+            bevy_egui::EguiPrimaryContextPass,
+            crate::android::apply_safe_area_insets
+                .before(crate::connection_ui::ConnectionPanelSet)
+                .before(crate::topics_view::topics_tree_ui_system),
+        );
         app.add_systems(Startup, |mut commands: Commands| {
             let camera = spawn_viewing_rig(&mut commands);
             commands.entity(camera).insert(PrimaryEguiContext);
