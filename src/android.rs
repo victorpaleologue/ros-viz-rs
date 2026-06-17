@@ -1,9 +1,12 @@
 //! Android entry point.
 //!
-//! Compiled only for Android, into the `cdylib` the APK loads. The
-//! [`bevy_main`](bevy::bevy_main) macro emits the `android_main` symbol that
-//! Android's GameActivity calls, and Bevy wires the `AndroidApp` into
-//! [`bevy::winit`] behind the scenes.
+//! Compiled only for Android, into the `cdylib` the APK loads. The app uses
+//! the framework's `NativeActivity` (Bevy is built with the
+//! `android-native-activity` backend, not the default GameActivity), which
+//! keeps the system status/navigation bars and lays the surface out within
+//! their insets. The [`bevy_main`](bevy::bevy_main) macro emits the
+//! `android_main` entry point that the android-activity glue calls, and Bevy
+//! wires the `AndroidApp` into [`bevy::winit`] behind the scenes.
 //!
 //! Like the browser build, Android uses the rosbridge transport only (DDS
 //! multicast is unreliable on mobile networks), so this crate must be built

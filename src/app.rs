@@ -100,14 +100,11 @@ pub fn build_app(options: &Options) -> App {
             window.fit_canvas_to_parent = true;
             window.prevent_default_event_handling = false;
         }
-        // On Android the activity owns the surface: go borderless fullscreen.
-        #[cfg(target_os = "android")]
-        {
-            window.mode = bevy::window::WindowMode::BorderlessFullscreen(
-                bevy::window::MonitorSelection::Primary,
-            );
-            window.resizable = false;
-        }
+        // On Android, stay a normal windowed activity: the system status and
+        // navigation bars are kept, and the surface is laid out within their
+        // insets, so the egui top bar sits below the status bar instead of
+        // behind it. (Borderless fullscreen pushed the surface edge-to-edge
+        // under the bars, hiding the connection bar.)
         app.add_plugins(DefaultPlugins.set(bevy::window::WindowPlugin {
             primary_window: Some(window),
             ..Default::default()

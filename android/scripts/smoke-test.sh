@@ -6,7 +6,7 @@
 set -uo pipefail
 
 PKG=eu.palaio.rosvizrs
-ACT=com.google.androidgamesdk.GameActivity
+ACT=android.app.NativeActivity
 APK="${GITHUB_WORKSPACE:-.}/ros-viz-rs-debug.apk"
 
 echo "Installing $APK"
@@ -38,10 +38,24 @@ pid="$(adb shell pidof "$PKG" | tr -d '\r')"
 # a few frames first, or we'd just photograph the launcher. Best-effort: never
 # fail the smoke test over a missing screenshot.
 adb shell am start -n "$PKG/$ACT" >/dev/null 2>&1 || true
-sleep 6
 shot="${GITHUB_WORKSPACE:-.}/app-screenshot.png"
-if adb exec-out screencap -p > "$shot" 2>/dev/null && [ -s "$shot" ]; then
-  echo "Captured screenshot -> $shot ($(wc -c < "$shot") bytes)"
+best=0
+for _ in $(seq 1 4); do
+  # A tap generates input so the reactive (battery-saving) renderer draws a
+  # fresh frame; the headless emulator tears the activity down a few seconds
+  # after launch, so grab quickly and keep the largest (least-blank) frame.
+  adb shell input tap 160 320 >/dev/null 2>&1 || true
+  sleep 1
+  tmp="$(mktemp)"
+  if adb exec-out screencap -p > "$tmp" 2>/dev/null; then
+    sz="$(wc -c < "$tmp")"
+    if [ "$sz" -gt "$best" ]; then best="$sz"; mv "$tmp" "$shot"; else rm -f "$tmp"; fi
+  else
+    rm -f "$tmp"
+  fi
+done
+if [ -s "$shot" ]; then
+  echo "Captured screenshot -> $shot ($best bytes)"
   # Also emit it base64 between markers: CI artifacts live on a storage host
   # that egress policies often block, but job logs are always fetchable, so
   # this lets the rendered frame be reviewed straight from the log.
