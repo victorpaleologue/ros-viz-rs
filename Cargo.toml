@@ -4,7 +4,7 @@
 # [package.metadata.*] sections below, which pin those back.
 [package]
 name = "ros-viz"
-version = "1.3.2"
+version = "1.3.3"
 edition = "2024"
 # Two bin targets (ros-viz + the ros-viz-rs alias) make a bare `cargo run`
 # ambiguous; pick the canonical one so `cargo run`/`cargo run --release` keep

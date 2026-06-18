@@ -102,6 +102,22 @@ fn connection_panel(
                 }
             }
 
+            // When native ROS 2 (DDS) isn't compiled in — the Android and web
+            // builds are rosbridge-only by design (DDS multicast is unreliable
+            // on mobile and unavailable in the browser) — say so. Otherwise the
+            // absent DDS option reads as a bug rather than a deliberate choice.
+            // (#37)
+            #[cfg(all(feature = "rosbridge", not(feature = "ros2")))]
+            {
+                ui.separator();
+                ui.label("ⓘ rosbridge-only").on_hover_text(
+                    "This build connects over rosbridge only — native DDS isn't \
+                     available here.\nTo view a ROS 2 (DDS) graph, run \
+                     `rosbridge_server` on a machine on your network and point \
+                     this field at its ws://<host>:9090 address.",
+                );
+            }
+
             #[cfg(feature = "ros2")]
             {
                 ui.separator();
