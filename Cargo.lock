@@ -6199,7 +6199,7 @@ dependencies = [
 
 [[package]]
 name = "ros-viz"
-version = "1.3.3"
+version = "1.3.4"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -6212,9 +6212,11 @@ dependencies = [
  "ewebsock",
  "futures",
  "image 0.24.9",
+ "jni",
  "k",
  "mesh-loader",
  "nalgebra 0.33.2",
+ "ndk-context",
  "ron",
  "ros2-client",
  "rustdds",

@@ -128,10 +128,10 @@ pub fn build_app(options: &Options) -> App {
         });
         // The runtime connection panel (switch demo / rosbridge / DDS).
         crate::connection_ui::register(&mut app, options);
-        // On Android, the only way out of the app is the Back button; wire it
-        // to a clean exit (it is otherwise ignored — see `android_back_exits`).
+        // On Android, send the app to the background on Back instead of
+        // exiting — see `android_back_backgrounds` for why exiting crashes.
         #[cfg(target_os = "android")]
-        app.add_systems(Update, android_back_exits);
+        app.add_systems(Update, android_back_backgrounds);
         // Reserve the system-bar / cutout areas before the other egui panels
         // claim space, so nothing renders behind the status / nav bars.
         #[cfg(target_os = "android")]
@@ -171,23 +171,62 @@ pub fn build_app(options: &Options) -> App {
     app
 }
 
-/// Exit the app when the Android Back button is pressed.
+/// Send the app to the background when the Android Back button is pressed,
+/// instead of exiting.
+///
+/// Pressing Back used to write [`AppExit`], which tears down winit's event
+/// loop. But Android keeps the process alive, and Bevy/winit can't restart a
+/// torn-down event loop — so relaunching from the launcher or recents crashed
+/// (#36). Backgrounding the task (the same thing the Home button does) routes
+/// through the normal `Suspended`/`Resumed` path winit already handles, so
+/// reopening resumes the same instance cleanly.
 ///
 /// winit 0.30 delivers Android's `BACK` keycode only as the logical
 /// [`Key::BrowserBack`] — it has no physical [`KeyCode`] — so we match on the
 /// logical key rather than `ButtonInput<KeyCode>`, which would never fire.
-/// Without this the button is swallowed and the user has no way to leave.
 #[cfg(target_os = "android")]
-fn android_back_exits(
-    mut keys: MessageReader<bevy::input::keyboard::KeyboardInput>,
-    mut exit: MessageWriter<AppExit>,
-) {
+fn android_back_backgrounds(mut keys: MessageReader<bevy::input::keyboard::KeyboardInput>) {
     use bevy::input::ButtonState;
     use bevy::input::keyboard::Key;
-    for key in keys.read() {
-        if key.state == ButtonState::Pressed && key.logical_key == Key::BrowserBack {
-            exit.write(AppExit::Success);
+    let backed = keys
+        .read()
+        .any(|k| k.state == ButtonState::Pressed && k.logical_key == Key::BrowserBack);
+    if backed {
+        move_task_to_back();
+    }
+}
+
+/// Call `Activity.moveTaskToBack(true)` over JNI, backgrounding the app like
+/// the Home button rather than finishing the activity.
+///
+/// The `JavaVM` and the `Activity` come from [`ndk_context`], populated by the
+/// android-activity glue; `jni` makes the one virtual call. Failures are logged
+/// and swallowed — at worst Back does nothing, which still beats crashing.
+#[cfg(target_os = "android")]
+fn move_task_to_back() {
+    use jni::objects::{JObject, JValue};
+
+    let ctx = ndk_context::android_context();
+    // SAFETY: ndk_context exposes the process-wide JavaVM and Activity set up
+    // by android-activity/winit; both are valid for the life of the process.
+    let vm = match unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) } {
+        Ok(vm) => vm,
+        Err(err) => {
+            tracing::warn!("Back: JavaVM::from_raw failed: {err}");
+            return;
         }
+    };
+    let mut env = match vm.attach_current_thread() {
+        Ok(env) => env,
+        Err(err) => {
+            tracing::warn!("Back: attach_current_thread failed: {err}");
+            return;
+        }
+    };
+    // SAFETY: `context()` is the Activity jobject for the current process.
+    let activity = unsafe { JObject::from_raw(ctx.context().cast()) };
+    if let Err(err) = env.call_method(&activity, "moveTaskToBack", "(Z)Z", &[JValue::Bool(1)]) {
+        tracing::warn!("Back: moveTaskToBack failed: {err}");
     }
 }
 

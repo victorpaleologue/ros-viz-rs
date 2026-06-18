@@ -4,7 +4,7 @@
 # [package.metadata.*] sections below, which pin those back.
 [package]
 name = "ros-viz"
-version = "1.3.3"
+version = "1.3.4"
 edition = "2024"
 # Two bin targets (ros-viz + the ros-viz-rs alias) make a bare `cargo run`
 # ambiguous; pick the canonical one so `cargo run`/`cargo run --release` keep
@@ -151,6 +151,11 @@ bevy = { version = "0.18", default-features = false, features = ["android-native
 # Exposes `ANDROID_APP` (the android-activity `AndroidApp`), used to read the
 # inset-aware content rect so egui panels avoid the system bars.
 bevy_android = "0.18"
+# Back button backgrounds the app via Activity.moveTaskToBack over JNI; the
+# JavaVM + Activity handles come from ndk-context (both already in the tree via
+# Bevy/android-activity).
+jni = "0.21"
+ndk-context = "0.1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
