@@ -91,6 +91,22 @@ cargo run --example urdf_view -- assets/nao_robot.urdf \
 
 More tools live in [examples/](examples/) (topic watching, URDF download).
 
+## Platforms & transports
+
+The viewer is transport-agnostic, but not every transport fits every platform:
+
+- **Desktop (native):** speaks **DDS** directly (the default) *and* rosbridge
+  (`--rosbridge ws://host:9090`). Native Zenoh is available via the `zenoh`
+  feature.
+- **Browser & Android:** **rosbridge only.** DDS multicast discovery is
+  unreliable on mobile networks and unavailable in the browser, so those
+  builds are compiled `--no-default-features --features rosbridge`. The
+  in-app connection bar shows an `ⓘ rosbridge-only` hint there.
+
+To inspect a ROS 2 (DDS) graph from the browser or a phone, run a
+[`rosbridge_server`](https://github.com/RobotWebTools/rosbridge_suite) on a
+machine on your network and point the app at its `ws://<host>:9090` address.
+
 ## Testing philosophy
 
 Everything is checked headlessly by `cargo test` — including rendering:
