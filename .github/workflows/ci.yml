@@ -15,7 +15,7 @@ jobs:
     # a few minutes warm with rust-cache).
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # alsa + udev headers are required to compile Bevy on Linux.
       - name: Install Bevy system dependencies
@@ -65,7 +65,7 @@ jobs:
       # runner it uses lavapipe (mesa software Vulkan rasterizer).
       WGPU_BACKEND: vulkan
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # alsa + udev for Bevy; mesa-vulkan-drivers provides lavapipe for
       # headless GPU render tests.
@@ -91,7 +91,7 @@ jobs:
 
       - name: Upload test artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: test-outputs-linux
           path: .test_outputs/
@@ -108,7 +108,7 @@ jobs:
     env:
       RUST_LOG: error
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -119,7 +119,7 @@ jobs:
 
       - name: Upload test artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: test-outputs-macos
           path: .test_outputs/
@@ -140,7 +140,7 @@ jobs:
       # uses lavapipe (mesa software Vulkan rasterizer).
       WGPU_BACKEND: vulkan
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # alsa + udev for Bevy; mesa-vulkan-drivers provides lavapipe for
       # headless GPU render tests.
@@ -159,7 +159,7 @@ jobs:
 
       - name: Upload test artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: test-outputs-docker-integration
           path: .test_outputs/
@@ -174,7 +174,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -202,7 +202,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Check that Cargo.toml version was bumped
         run: |

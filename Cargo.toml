@@ -4,7 +4,7 @@
 # [package.metadata.*] sections below, which pin those back.
 [package]
 name = "ros-viz"
-version = "1.3.1"
+version = "1.3.2"
 edition = "2024"
 # Two bin targets (ros-viz + the ros-viz-rs alias) make a bare `cargo run`
 # ambiguous; pick the canonical one so `cargo run`/`cargo run --release` keep
@@ -163,17 +163,19 @@ wasm-bindgen = "0.2"
 name = "ros_viz_rs"
 crate-type = ["cdylib", "rlib"]
 
-# Two binaries from one entrypoint. `ros-viz` is the short command installed by
-# `cargo install ros-viz`; `ros-viz-rs` is an alias kept so the distributed
-# packages, the macOS/Windows artifacts and the existing scripts/docs that call
-# the binary by that name keep working.
+# Two binaries with identical behaviour. `ros-viz` is the short command
+# installed by `cargo install ros-viz`; `ros-viz-rs` is an alias kept so the
+# distributed packages, the macOS/Windows artifacts and the existing
+# scripts/docs that call the binary by that name keep working. Each has its own
+# source file (`src/main.rs` and `src/bin/ros-viz-rs.rs`) so no single file is
+# claimed by two targets — Cargo warns when it is.
 [[bin]]
 name = "ros-viz"
 path = "src/main.rs"
 
 [[bin]]
 name = "ros-viz-rs"
-path = "src/main.rs"
+path = "src/bin/ros-viz-rs.rs"
 
 [dev-dependencies]
 chrono = ">=0.4.35"
