@@ -166,11 +166,11 @@ jobs:
           if-no-files-found: ignore
 
   android-build:
-    # Cross-compiles the Android library (Bevy's default GameActivity backend)
-    # with the NDK, so the `#[cfg(target_os = "android")]` code is type-checked
-    # on every PR. Like the wasm build, Android is rosbridge-only (no native
-    # DDS). Produces libros_viz.so; turning that into a signed, installable APK
-    # and validating it on a device is tracked in the Android issue.
+    # Cross-compiles the Android library with the NDK, so the
+    # `#[cfg(target_os = "android")]` code is type-checked on every PR. Builds
+    # the shipped config — default features (native DDS + rosbridge), matching
+    # the APK — so a DDS-on-Android compile break is caught here, fast, not only
+    # in the slower APK job.
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -194,8 +194,7 @@ jobs:
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
         run: |
           cargo install cargo-ndk --locked
-          cargo ndk -t arm64-v8a build --release --lib \
-            --no-default-features --features rosbridge
+          cargo ndk -t arm64-v8a build --release --lib
 
   version-bump:
     if: github.event_name == 'pull_request'
