@@ -98,12 +98,17 @@ The viewer is transport-agnostic, but not every transport fits every platform:
 - **Desktop (native):** speaks **DDS** directly (the default) *and* rosbridge
   (`--rosbridge ws://host:9090`). Native Zenoh is available via the `zenoh`
   feature.
-- **Browser & Android:** **rosbridge only.** DDS multicast discovery is
-  unreliable on mobile networks and unavailable in the browser, so those
-  builds are compiled `--no-default-features --features rosbridge`. The
-  in-app connection bar shows an `ⓘ rosbridge-only` hint there.
+- **Android:** **DDS + rosbridge**, like the desktop build. Native DDS works
+  best when the phone is on the **same Wi-Fi LAN** as the robot — the app holds
+  a Wi-Fi multicast lock so discovery can receive peers — but mobile data and
+  many Wi-Fi networks block multicast, so the connection bar warns that DDS is
+  *unreliable on mobile*; rosbridge is the dependable fallback.
+- **Browser:** **rosbridge only.** DDS multicast is unavailable in the browser,
+  so the web build is compiled `--no-default-features --features rosbridge` and
+  the connection bar shows an `ⓘ rosbridge-only` hint.
 
-To inspect a ROS 2 (DDS) graph from the browser or a phone, run a
+To inspect a ROS 2 (DDS) graph that you can't reach over multicast (a phone on
+cellular, or the browser), run a
 [`rosbridge_server`](https://github.com/RobotWebTools/rosbridge_suite) on a
 machine on your network and point the app at its `ws://<host>:9090` address.
 

@@ -1,8 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- The rosbridge WebSocket client is the only thing needing network. -->
+    <!-- rosbridge (WebSocket) and DDS both need the network. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Native DDS discovery is UDP multicast; Android drops multicast unless
+         the app holds a WifiManager.MulticastLock, which needs these. -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
     <application
         android:label="ros-viz-rs"

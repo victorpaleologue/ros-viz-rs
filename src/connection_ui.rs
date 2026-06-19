@@ -10,6 +10,10 @@ use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use crate::connection::{ActiveConnection, ConnectionMode, PendingConnection};
 use crate::options::Options;
 
+/// Amber used for the Android "DDS is unreliable on mobile" warning.
+#[cfg(target_os = "android")]
+const WARN_COLOR: egui::Color32 = egui::Color32::from_rgb(220, 170, 60);
+
 /// Editable form state for the connection bar, kept across frames.
 #[derive(Resource)]
 struct ConnectionForm {
@@ -126,6 +130,18 @@ fn connection_panel(
                 if ui.button("Connect").clicked() {
                     pending.request(ConnectionMode::Dds(form.domain));
                 }
+                // On a phone, native DDS usually won't find the robot: discovery
+                // is UDP multicast, which mobile data and many Wi-Fi networks
+                // drop. We hold a multicast lock (best effort) but warn anyway
+                // and point at rosbridge, which always works.
+                #[cfg(target_os = "android")]
+                ui.label(egui::RichText::new("⚠ unreliable on mobile").color(WARN_COLOR))
+                    .on_hover_text(
+                        "Native DDS finds the robot via UDP multicast. It can \
+                         work when the phone is on the same Wi-Fi LAN as the \
+                         robot, but mobile data and many Wi-Fi networks block \
+                         multicast — if it doesn't connect, use rosbridge.",
+                    );
             }
         });
     });
