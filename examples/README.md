@@ -8,22 +8,22 @@ Test URDF parsing and visualization by loading URDF files from disk and exportin
 cargo run --example urdf_view <urdf_file> [--export-snapshot <output_image>]
 ```
 
-If `output_image` is omitted, saves to `<urdf_name>.png` in the current directory.
+Without `--export-snapshot`, the model opens in an interactive viewer window.
 
 ## Examples
 
 Test with the provided sample URDFs:
 
 ```bash
-# Default output (simple_arm.png in current directory)
-cargo run --example test_urdf test-data/urdf/simple_arm.urdf
+# Interactive viewer
+cargo run --example urdf_view test-data/urdf/simple_arm.urdf
 
-# Explicit output path
-cargo run --example test_urdf test-data/urdf/simple_arm.urdf output/my_arm.png
+# Export a snapshot to a given path
+cargo run --example urdf_view test-data/urdf/simple_arm.urdf --export-snapshot output/my_arm.png
 
 # Multiple tests
-cargo run --example test_urdf test-data/urdf/two_link_planar.urdf two_link_planar.png
-cargo run --example test_urdf test-data/urdf/triple_pendulum.urdf triple_pendulum.png
+cargo run --example urdf_view test-data/urdf/two_link_planar.urdf --export-snapshot two_link_planar.png
+cargo run --example urdf_view test-data/urdf/triple_pendulum.urdf --export-snapshot triple_pendulum.png
 ```
 
 ## Output
@@ -32,7 +32,7 @@ The tool will:
 
 1. Parse the URDF file and extract kinematic data
 2. Render the robot model in 3D with proper joint hierarchy
-3. Export an image to the specified path (or `<urdf_name>.png` in current directory)
+3. Export an image to the path given by `--export-snapshot`, or open an interactive viewer window if none is given
 
 ## Visual Inspection
 
@@ -49,28 +49,13 @@ See [test-data/urdf/README.md](../test-data/urdf/README.md) for expected visuali
 
 ## Topics Tree Viewer
 
-Display ROS-style topics in an interactive, collapsible tree widget.
+Display ROS 2 topics discovered live via DDS in an interactive, collapsible tree widget.
 
 ### Topics View Usage
 
 ```bash
-# Run with built-in default topics:
-cargo run --example topics_tree
-
-# Load topics from a JSON file:
-cargo run --example topics_tree -- topics.json
+cargo run --example view_topics --features ros,ui
 ```
 
-### JSON format
-
-The input file should be an array of objects, each with a `topic_name` field:
-
-```json
-[
-  { "topic_name": "/robot/joint_states" },
-  { "topic_name": "/sensor/imu/data" },
-  { "topic_name": "/tf" }
-]
-```
-
-Click on a branch node to expand or collapse it.
+Topics are discovered from the DDS graph on ROS domain 0. Click on a branch node
+to expand or collapse it.
