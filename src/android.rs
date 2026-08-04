@@ -8,12 +8,14 @@
 //! `android_main` entry point that the android-activity glue calls, and Bevy
 //! wires the `AndroidApp` into [`bevy::winit`] behind the scenes.
 //!
-//! Like the browser build, Android uses the rosbridge transport only (DDS
-//! multicast is unreliable on mobile networks), so this crate must be built
-//! with `--no-default-features --features rosbridge`. The app launches the
-//! embedded NAO demo so it shows something useful out of the box; from there
-//! the runtime connection bar (see [`crate::connection_ui`]) lets the user
-//! type a rosbridge URL and switch to a live robot.
+//! Android builds with the default transports (native DDS + rosbridge), like
+//! the desktop binary — only the browser build is rosbridge-only. Native DDS
+//! discovery is UDP multicast, which mobile networks and many Wi-Fi APs drop,
+//! so it only works on a good LAN: the app holds a Wi-Fi multicast lock (see
+//! [`crate::app`]) and the connection bar warns, with rosbridge as the reliable
+//! fallback. The app launches the embedded NAO demo so it shows something out
+//! of the box; from there the connection bar (see [`crate::connection_ui`])
+//! lets the user set a DDS domain or a rosbridge URL and switch to a live robot.
 
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
@@ -27,7 +29,8 @@ use crate::options::Options;
 #[bevy_main]
 pub fn main() {
     let options = Options {
-        // No CLI/connect UI on device yet — show the embedded demo.
+        // Launch into the demo so the app shows something immediately; the
+        // connection bar lets the user switch to DDS (set a domain) or rosbridge.
         demo: true,
         ..Options::default()
     };

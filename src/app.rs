@@ -132,6 +132,10 @@ pub fn build_app(options: &Options) -> App {
         // exiting — see `android_back_backgrounds` for why exiting crashes.
         #[cfg(target_os = "android")]
         app.add_systems(Update, android_back_backgrounds);
+        // Hold a Wi-Fi multicast lock so native DDS discovery can receive peers
+        // on the LAN (Android otherwise drops multicast). Best-effort.
+        #[cfg(all(target_os = "android", feature = "ros2"))]
+        app.add_systems(Startup, acquire_wifi_multicast_lock);
         // Reserve the system-bar / cutout areas before the other egui panels
         // claim space, so nothing renders behind the status / nav bars.
         #[cfg(target_os = "android")]
@@ -228,6 +232,71 @@ fn move_task_to_back() {
     if let Err(err) = env.call_method(&activity, "moveTaskToBack", "(Z)Z", &[JValue::Bool(1)]) {
         tracing::warn!("Back: moveTaskToBack failed: {err}");
     }
+}
+
+/// Acquire and hold a Wi-Fi [`MulticastLock`] so native DDS discovery works.
+///
+/// DDS finds peers via SPDP over UDP multicast, but Android's Wi-Fi driver
+/// drops multicast/broadcast packets unless an app holds a
+/// `WifiManager.MulticastLock`. Without it, discovery never receives other
+/// participants and DDS appears dead even on a good LAN. We acquire one at
+/// startup and leak a global ref so it's held for the whole process.
+///
+/// This only helps on a real LAN — mobile data and many locked-down Wi-Fi
+/// networks still block multicast, so DDS on a phone stays unreliable (the
+/// connection bar warns about this and points at rosbridge).
+#[cfg(all(target_os = "android", feature = "ros2"))]
+fn acquire_wifi_multicast_lock() {
+    if let Err(err) = try_acquire_wifi_multicast_lock() {
+        tracing::warn!(
+            "DDS: could not acquire Wi-Fi multicast lock (discovery may not work): {err}"
+        );
+    }
+}
+
+#[cfg(all(target_os = "android", feature = "ros2"))]
+fn try_acquire_wifi_multicast_lock() -> jni::errors::Result<()> {
+    use jni::objects::{JObject, JValue};
+
+    let ctx = ndk_context::android_context();
+    // SAFETY: process-wide JavaVM + Activity from the android-activity glue.
+    let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }?;
+    let mut env = vm.attach_current_thread()?;
+    let activity = unsafe { JObject::from_raw(ctx.context().cast()) };
+
+    // WifiManager wifi = (WifiManager) ctx.getSystemService("wifi");
+    let service = env.new_string("wifi")?;
+    let wifi = env
+        .call_method(
+            &activity,
+            "getSystemService",
+            "(Ljava/lang/String;)Ljava/lang/Object;",
+            &[JValue::Object(&service)],
+        )?
+        .l()?;
+    if wifi.is_null() {
+        tracing::warn!("DDS: WIFI_SERVICE unavailable; skipping multicast lock");
+        return Ok(());
+    }
+
+    // MulticastLock lock = wifi.createMulticastLock("ros-viz-dds");
+    let tag = env.new_string("ros-viz-dds")?;
+    let lock = env
+        .call_method(
+            &wifi,
+            "createMulticastLock",
+            "(Ljava/lang/String;)Landroid/net/wifi/WifiManager$MulticastLock;",
+            &[JValue::Object(&tag)],
+        )?
+        .l()?;
+    env.call_method(&lock, "setReferenceCounted", "(Z)V", &[JValue::Bool(0)])?;
+    env.call_method(&lock, "acquire", "()V", &[])?;
+
+    // Keep the MulticastLock object alive for the life of the process so it is
+    // never GC'd (which would release the lock): leak a global reference.
+    std::mem::forget(env.new_global_ref(&lock)?);
+    tracing::info!("DDS: Wi-Fi multicast lock acquired");
+    Ok(())
 }
 
 /// Drive a snapshot-mode app until a robot is rendered, then write the PNG.
